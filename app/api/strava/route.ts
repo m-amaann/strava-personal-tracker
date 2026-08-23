@@ -1,10 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
+
 import { cookies } from "next/headers";
 
-import { COOKIE_NAME, decryptStravaSession } from "@/lib/strava/session";
+import {
+  STRAVA_AUTH_COOKIE,
+  decryptStravaAuth,
+  encryptStravaAuth,
+  isAccessTokenExpired,
+  refreshStravaAuth,
+} from "@/lib/strava/auth";
 
-const STRAVA_API_BASE =
-  "https://www.strava.com/api/v3";
+export const dynamic = "force-dynamic";
+
+const STRAVA_API_BASE = "https://api-v3.strava.com";
 
 type Resource =
   | "athlete"
@@ -13,71 +24,192 @@ type Resource =
   | "streams"
   | "stats";
 
-async function getSession() {
-  const cookieStore = await cookies();
+/* -------------------------------------------------------------------------- */
+/* Get valid Strava authentication                                             */
+/* -------------------------------------------------------------------------- */
 
-  const token = cookieStore.get(COOKIE_NAME)?.value;
+async function getValidAuth() {
+  const cookieStore =
+    await cookies();
+
+  const token =
+    cookieStore.get(
+      STRAVA_AUTH_COOKIE,
+    )?.value;
 
   if (!token) {
     return null;
   }
 
-  return decryptStravaSession(token);
+  const auth =
+    await decryptStravaAuth(token);
+
+  if (!auth) {
+    return null;
+  }
+
+  /*
+   * Access token is still valid.
+   */
+  if (
+    !isAccessTokenExpired(
+      auth.expiresAt,
+    )
+  ) {
+    return auth;
+  }
+
+  /*
+   * Access token is expired or
+   * has one hour or less remaining.
+   */
+  const refreshed =
+    await refreshStravaAuth(
+      auth,
+    );
+
+  /*
+   * Encrypt the new access token,
+   * refresh token and expiration time.
+   */
+  const encrypted =
+    await encryptStravaAuth(
+      refreshed,
+    );
+
+  /*
+   * Persist the refreshed authentication.
+   */
+  cookieStore.set({
+    name:
+      STRAVA_AUTH_COOKIE,
+
+    value:
+      encrypted,
+
+    httpOnly:
+      true,
+
+    secure:
+      process.env.NODE_ENV ===
+      "production",
+
+    sameSite:
+      "lax",
+
+    path: "/",
+
+    /*
+     * Keep the authentication cookie
+     * for a long period.
+     *
+     * The Strava access token itself
+     * still expires normally and is
+     * automatically refreshed above.
+     */
+    maxAge:
+      60 *
+      60 *
+      24 *
+      365 *
+      10,
+  });
+
+  return refreshed;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Strava API fetch                                                            */
+/* -------------------------------------------------------------------------- */
 
 async function stravaFetch(
   path: string,
   accessToken: string,
   options?: RequestInit,
 ) {
-  const response = await fetch(
-    `${STRAVA_API_BASE}${path}`,
-    {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-      cache: "no-store",
-    },
-  );
+  const response =
+    await fetch(
+      `${STRAVA_API_BASE}${path}`,
+      {
+        ...options,
 
-  const data = await response.json().catch(() => null);
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+
+          "Content-Type":
+            "application/json",
+
+          ...options?.headers,
+        },
+
+        cache: "no-store",
+      },
+    );
+
+  const data =
+    await response
+      .json()
+      .catch(
+        () => null,
+      );
 
   if (!response.ok) {
     return {
       ok: false,
-      status: response.status,
+      status:
+        response.status,
       data,
     };
   }
 
   return {
     ok: true,
-    status: response.status,
+    status:
+      response.status,
     data,
   };
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getSession();
+/* -------------------------------------------------------------------------- */
+/* GET /api/strava                                                             */
+/* -------------------------------------------------------------------------- */
 
-    if (!session) {
+export async function GET(
+  request: NextRequest,
+) {
+  try {
+    /*
+     * This is the only authentication
+     * function required here.
+     *
+     * It automatically refreshes the
+     * Strava token when necessary.
+     */
+    const auth =
+      await getValidAuth();
+
+    if (!auth) {
       return NextResponse.json(
         {
           connected: false,
-          error: "Strava account is not connected.",
+          error:
+            "Strava account is not connected.",
         },
-        { status: 401 },
+        {
+          status: 401,
+        },
       );
     }
 
-    const { searchParams } = request.nextUrl;
+    const {
+      searchParams,
+    } = request.nextUrl;
 
     const resource =
-      searchParams.get("resource") as Resource | null;
+      searchParams.get(
+        "resource",
+      ) as Resource | null;
 
     if (!resource) {
       return NextResponse.json(
@@ -85,106 +217,144 @@ export async function GET(request: NextRequest) {
           error:
             "Missing resource. Use athlete, activities, activity, streams, or stats.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
     switch (resource) {
-      /**
-       * GET /api/strava?resource=athlete
-       *
-       * Current authenticated Strava athlete.
-       */
+      /* -------------------------------------------------------------------- */
+      /* Athlete                                                              */
+      /* -------------------------------------------------------------------- */
+
       case "athlete": {
-        const result = await stravaFetch(
-          "/athlete",
-          session.accessToken,
-        );
+        const result =
+          await stravaFetch(
+            "/athlete",
+            auth.accessToken,
+          );
 
         if (!result.ok) {
           return NextResponse.json(
             {
-              error: "Failed to fetch athlete.",
-              details: result.data,
+              error:
+                "Failed to fetch athlete.",
+
+              details:
+                result.data,
             },
-            { status: result.status },
+            {
+              status:
+                result.status,
+            },
           );
         }
 
         return NextResponse.json({
           connected: true,
-          athlete: result.data,
+          athlete:
+            result.data,
         });
       }
 
-      /**
-       * GET /api/strava?resource=activities
-       *
-       * Athlete activities.
-       *
-       * Optional:
-       * ?page=1
-       * ?per_page=30
-       * ?before=timestamp
-       * ?after=timestamp
-       */
+      /* -------------------------------------------------------------------- */
+      /* Activities                                                           */
+      /* -------------------------------------------------------------------- */
+
       case "activities": {
         const page =
-          searchParams.get("page") ?? "1";
+          searchParams.get(
+            "page",
+          ) ?? "1";
 
         const perPage =
-          searchParams.get("per_page") ?? "30";
+          searchParams.get(
+            "per_page",
+          ) ?? "30";
 
         const before =
-          searchParams.get("before");
+          searchParams.get(
+            "before",
+          );
 
         const after =
-          searchParams.get("after");
+          searchParams.get(
+            "after",
+          );
 
-        const params = new URLSearchParams();
+        const params =
+          new URLSearchParams();
 
-        params.set("page", page);
-        params.set("per_page", perPage);
+        params.set(
+          "page",
+          page,
+        );
+
+        params.set(
+          "per_page",
+          perPage,
+        );
 
         if (before) {
-          params.set("before", before);
+          params.set(
+            "before",
+            before,
+          );
         }
 
         if (after) {
-          params.set("after", after);
+          params.set(
+            "after",
+            after,
+          );
         }
 
-        const result = await stravaFetch(
-          `/athlete/activities?${params.toString()}`,
-          session.accessToken,
-        );
+        const result =
+          await stravaFetch(
+            `/athlete/activities?${params.toString()}`,
+            auth.accessToken,
+          );
 
         if (!result.ok) {
           return NextResponse.json(
             {
-              error: "Failed to fetch activities.",
-              details: result.data,
+              error:
+                "Failed to fetch activities.",
+
+              details:
+                result.data,
             },
-            { status: result.status },
+            {
+              status:
+                result.status,
+            },
           );
         }
 
         return NextResponse.json({
           connected: true,
-          activities: result.data,
-          page: Number(page),
-          perPage: Number(perPage),
+
+          activities:
+            result.data,
+
+          page:
+            Number(page),
+
+          perPage:
+            Number(perPage),
         });
       }
 
-      /**
-       * GET /api/strava?resource=activity&id=123
-       *
-       * Detailed activity.
-       */
+      /* -------------------------------------------------------------------- */
+      /* Activity                                                             */
+      /* -------------------------------------------------------------------- */
+
       case "activity": {
         const id =
-          searchParams.get("id");
+          searchParams.get(
+            "id",
+          );
 
         if (!id) {
           return NextResponse.json(
@@ -192,39 +362,53 @@ export async function GET(request: NextRequest) {
               error:
                 "Missing activity id.",
             },
-            { status: 400 },
+            {
+              status: 400,
+            },
           );
         }
 
-        const result = await stravaFetch(
-          `/activities/${encodeURIComponent(id)}`,
-          session.accessToken,
-        );
+        const result =
+          await stravaFetch(
+            `/activities/${encodeURIComponent(
+              id,
+            )}`,
+            auth.accessToken,
+          );
 
         if (!result.ok) {
           return NextResponse.json(
             {
-              error: "Failed to fetch activity.",
-              details: result.data,
+              error:
+                "Failed to fetch activity.",
+
+              details:
+                result.data,
             },
-            { status: result.status },
+            {
+              status:
+                result.status,
+            },
           );
         }
 
         return NextResponse.json({
           connected: true,
-          activity: result.data,
+
+          activity:
+            result.data,
         });
       }
 
-      /**
-       * GET /api/strava?resource=streams&id=123
-       *
-       * Activity streams.
-       */
+      /* -------------------------------------------------------------------- */
+      /* Streams                                                              */
+      /* -------------------------------------------------------------------- */
+
       case "streams": {
         const id =
-          searchParams.get("id");
+          searchParams.get(
+            "id",
+          );
 
         if (!id) {
           return NextResponse.json(
@@ -232,12 +416,16 @@ export async function GET(request: NextRequest) {
               error:
                 "Missing activity id.",
             },
-            { status: 400 },
+            {
+              status: 400,
+            },
           );
         }
 
         const keys =
-          searchParams.get("keys") ??
+          searchParams.get(
+            "keys",
+          ) ??
           [
             "time",
             "distance",
@@ -250,73 +438,104 @@ export async function GET(request: NextRequest) {
             "grade_smooth",
           ].join(",");
 
-        const params = new URLSearchParams();
+        const params =
+          new URLSearchParams();
 
-        params.set("keys", keys);
-        params.set("key_by_type", "true");
-
-        const result = await stravaFetch(
-          `/activities/${encodeURIComponent(
-            id,
-          )}/streams?${params.toString()}`,
-          session.accessToken,
+        params.set(
+          "keys",
+          keys,
         );
+
+        params.set(
+          "key_by_type",
+          "true",
+        );
+
+        const result =
+          await stravaFetch(
+            `/activities/${encodeURIComponent(
+              id,
+            )}/streams?${params.toString()}`,
+            auth.accessToken,
+          );
 
         if (!result.ok) {
           return NextResponse.json(
             {
-              error: "Failed to fetch activity streams.",
-              details: result.data,
+              error:
+                "Failed to fetch activity streams.",
+
+              details:
+                result.data,
             },
-            { status: result.status },
+            {
+              status:
+                result.status,
+            },
           );
         }
 
         return NextResponse.json({
           connected: true,
-          activityId: Number(id),
-          streams: result.data,
+
+          activityId:
+            Number(id),
+
+          streams:
+            result.data,
         });
       }
 
-      /**
-       * GET /api/strava?resource=stats
-       *
-       * Athlete statistics.
-       */
+      /* -------------------------------------------------------------------- */
+      /* Stats                                                                */
+      /* -------------------------------------------------------------------- */
+
       case "stats": {
-        const athleteId =
-          session.athleteId;
-
-        const result = await stravaFetch(
-          `/athletes/${encodeURIComponent(
-            athleteId,
-          )}/stats`,
-          session.accessToken,
-        );
+        const result =
+          await stravaFetch(
+            `/athletes/${encodeURIComponent(
+              auth.athleteId,
+            )}/stats`,
+            auth.accessToken,
+          );
 
         if (!result.ok) {
           return NextResponse.json(
             {
-              error: "Failed to fetch athlete stats.",
-              details: result.data,
+              error:
+                "Failed to fetch athlete stats.",
+
+              details:
+                result.data,
             },
-            { status: result.status },
+            {
+              status:
+                result.status,
+            },
           );
         }
 
         return NextResponse.json({
           connected: true,
-          stats: result.data,
+
+          stats:
+            result.data,
         });
       }
+
+      /* -------------------------------------------------------------------- */
+      /* Invalid resource                                                     */
+      /* -------------------------------------------------------------------- */
 
       default:
         return NextResponse.json(
           {
-            error: `Unsupported resource: ${resource}`,
+            error:
+              `Unsupported resource: ${resource}`,
           },
-          { status: 400 },
+          {
+            status: 400,
+          },
         );
     }
   } catch (error) {
@@ -327,9 +546,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       {
-        error: "Internal server error.",
+        error:
+          "Internal server error.",
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     );
   }
 }

@@ -1,9 +1,12 @@
 import { cookies } from "next/headers";
 
 import {
-  COOKIE_NAME,
-  decryptStravaSession,
-} from "@/lib/strava/session";
+  STRAVA_AUTH_COOKIE,
+  decryptStravaAuth,
+  encryptStravaAuth,
+  isAccessTokenExpired,
+  refreshStravaAuth,
+} from "@/lib/strava/auth";
 
 import type {
   StravaActivity,
@@ -16,25 +19,120 @@ import type {
 /* -------------------------------------------------------------------------- */
 
 const STRAVA_API_URL =
-  "https://www.strava.com/api/v3";
+  "https://api-v3.strava.com";
 
 /* -------------------------------------------------------------------------- */
-/* Session                                                                    */
+/* Authentication                                                             */
 /* -------------------------------------------------------------------------- */
 
-export async function getStravaSession() {
-  const cookieStore = await cookies();
+/**
+ * Get a valid Strava authentication object.
+ *
+ * This function:
+ *
+ * 1. Reads the encrypted authentication cookie.
+ * 2. Decrypts the authentication data.
+ * 3. Checks the access-token expiration.
+ * 4. Refreshes the access token when necessary.
+ * 5. Saves the new access/refresh tokens back to the cookie.
+ *
+ * No database is required.
+ */
+export async function getStravaAuth() {
+  const cookieStore =
+    await cookies();
 
-  const sessionCookie =
-    cookieStore.get(COOKIE_NAME)?.value;
+  const authCookie =
+    cookieStore.get(
+      STRAVA_AUTH_COOKIE,
+    )?.value;
 
-  if (!sessionCookie) {
+  if (!authCookie) {
     return null;
   }
 
-  return decryptStravaSession(
-    sessionCookie,
-  );
+  const auth =
+    await decryptStravaAuth(
+      authCookie,
+    );
+
+  if (!auth) {
+    return null;
+  }
+
+  /*
+   * Access token is still valid.
+   */
+  if (
+    !isAccessTokenExpired(
+      auth.expiresAt,
+    )
+  ) {
+    return auth;
+  }
+
+  /*
+   * Access token is expired or
+   * approaching expiration.
+   *
+   * Get a new access token using
+   * the refresh token.
+   */
+  const refreshed =
+    await refreshStravaAuth(
+      auth,
+    );
+
+  /*
+   * Encrypt the new authentication
+   * information.
+   */
+  const encrypted =
+    await encryptStravaAuth(
+      refreshed,
+    );
+
+  /*
+   * Save the new authentication
+   * back to the browser cookie.
+   */
+  cookieStore.set({
+    name:
+      STRAVA_AUTH_COOKIE,
+
+    value:
+      encrypted,
+
+    httpOnly:
+      true,
+
+    secure:
+      process.env.NODE_ENV ===
+      "production",
+
+    sameSite:
+      "lax",
+
+    path: "/",
+
+    /*
+     * Long-lived application cookie.
+     *
+     * The Strava access token itself
+     * still expires normally.
+     *
+     * getStravaAuth() automatically
+     * refreshes it when required.
+     */
+    maxAge:
+      60 *
+      60 *
+      24 *
+      365 *
+      10,
+  });
+
+  return refreshed;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -44,39 +142,53 @@ export async function getStravaSession() {
 async function stravaFetch<T>(
   endpoint: string,
 ): Promise<T> {
-  const session =
-    await getStravaSession();
+  const auth =
+    await getStravaAuth();
 
-  if (!session) {
+  if (!auth) {
     throw new Error(
       "Strava account is not connected.",
     );
   }
 
-  const response = await fetch(
-    `${STRAVA_API_URL}${endpoint}`,
-    {
-      method: "GET",
+  const response =
+    await fetch(
+      `${STRAVA_API_URL}${endpoint}`,
+      {
+        method: "GET",
 
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
+        headers: {
+          Authorization:
+            `Bearer ${auth.accessToken}`,
+
+          "Content-Type":
+            "application/json",
+        },
+
+        /*
+         * Always fetch fresh data
+         * from Strava.
+         */
+        cache: "no-store",
       },
-
-      cache: "no-store",
-    },
-  );
+    );
 
   if (!response.ok) {
     const details =
-      await response.json().catch(
-        () => null,
-      );
+      await response
+        .json()
+        .catch(
+          () => null,
+        );
 
     console.error(
       "Strava API error:",
       {
-        status: response.status,
+        status:
+          response.status,
+
         endpoint,
+
         details,
       },
     );
@@ -105,10 +217,10 @@ export async function getAthlete(): Promise<StravaAthlete> {
 /* -------------------------------------------------------------------------- */
 
 export async function isStravaConnected(): Promise<boolean> {
-  const session =
-    await getStravaSession();
+  const auth =
+    await getStravaAuth();
 
-  return Boolean(session);
+  return Boolean(auth);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -127,10 +239,16 @@ export async function getActivities(
 ): Promise<StravaActivity[]> {
   const query =
     new URLSearchParams({
-      page: String(page),
-      per_page: String(
-        Math.min(perPage, 200),
-      ),
+      page:
+        String(page),
+
+      per_page:
+        String(
+          Math.min(
+            perPage,
+            200,
+          ),
+        ),
     });
 
   return stravaFetch<StravaActivity[]>(
@@ -165,7 +283,8 @@ export async function getAllActivities(): Promise<
       );
 
     if (
-      activities.length === 0
+      activities.length ===
+      0
     ) {
       break;
     }
@@ -199,30 +318,21 @@ export async function getAllActivities(): Promise<
  * Fetch all activities from January 1st
  * of the current year until now.
  *
- * This is used by:
- *
- * - Activity Summary
- * - Yearly distance
- * - Running distance
- * - Cycling distance
- * - Swimming distance
- * - Walking distance
- * - Hiking distance
- * - Yearly longest run
- *
- * Strava returns activities newest first,
+ * Activities are returned newest first,
  * so we stop when we reach the previous year.
  */
 export async function getYearToDateActivities(): Promise<
   StravaActivity[]
 > {
-  const now = new Date();
+  const now =
+    new Date();
 
-  const startOfYear = new Date(
-    now.getFullYear(),
-    0,
-    1,
-  );
+  const startOfYear =
+    new Date(
+      now.getFullYear(),
+      0,
+      1,
+    );
 
   const activities: StravaActivity[] =
     [];
@@ -239,7 +349,8 @@ export async function getYearToDateActivities(): Promise<
       );
 
     if (
-      pageActivities.length === 0
+      pageActivities.length ===
+      0
     ) {
       break;
     }
@@ -247,7 +358,10 @@ export async function getYearToDateActivities(): Promise<
     let reachedPreviousYear =
       false;
 
-    for (const activity of pageActivities) {
+    for (
+      const activity of
+      pageActivities
+    ) {
       const activityDate =
         new Date(
           activity.start_date_local,
@@ -261,7 +375,9 @@ export async function getYearToDateActivities(): Promise<
           activity,
         );
       } else {
-        reachedPreviousYear = true;
+        reachedPreviousYear =
+          true;
+
         break;
       }
     }
@@ -270,7 +386,9 @@ export async function getYearToDateActivities(): Promise<
      * We reached activities from
      * before January 1st.
      */
-    if (reachedPreviousYear) {
+    if (
+      reachedPreviousYear
+    ) {
       break;
     }
 
@@ -298,8 +416,10 @@ export function isRunningActivity(
   activity: StravaActivity,
 ): boolean {
   return (
-    activity.type === "Run" ||
-    activity.sport_type === "Run"
+    activity.type ===
+      "Run" ||
+    activity.sport_type ===
+      "Run"
   );
 }
 
@@ -346,7 +466,10 @@ export async function getRecentRuns(
   const runs =
     await getAllRuns();
 
-  return runs.slice(0, limit);
+  return runs.slice(
+    0,
+    limit,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -359,7 +482,10 @@ export async function getRecentYearRuns(
   const runs =
     await getYearToDateRuns();
 
-  return runs.slice(0, limit);
+  return runs.slice(
+    0,
+    limit,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -369,7 +495,11 @@ export async function getRecentYearRuns(
 export async function getActivity(
   activityId: number | string,
 ): Promise<StravaActivity> {
-  return stravaFetch<StravaActivity>(`/activities/${activityId}`,);
+  return stravaFetch<StravaActivity>(
+    `/activities/${encodeURIComponent(
+      String(activityId),
+    )}`,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -391,12 +521,17 @@ export async function getActivityStreams(
 
   const query =
     new URLSearchParams({
-      keys: keys.join(","),
-      key_by_type: "true",
+      keys:
+        keys.join(","),
+
+      key_by_type:
+        "true",
     });
 
   return stravaFetch<StravaActivityStreams>(
-    `/activities/${activityId}/streams?${query.toString()}`,
+    `/activities/${encodeURIComponent(
+      String(activityId),
+    )}/streams?${query.toString()}`,
   );
 }
 
@@ -406,58 +541,67 @@ export async function getActivityStreams(
 
 export interface StravaActivityTotals {
   count?: number;
+
   distance?: number;
+
   moving_time?: number;
+
   elapsed_time?: number;
+
   elevation_gain?: number;
+
   achievement_count?: number;
 }
 
 export interface StravaAthleteStats {
   biggest_ride_distance?: number;
+
   biggest_climb_elevation_gain?: number;
 
   recent_ride_totals?: StravaActivityTotals;
+
   recent_run_totals?: StravaActivityTotals;
+
   recent_swim_totals?: StravaActivityTotals;
 
   ytd_ride_totals?: StravaActivityTotals;
+
   ytd_run_totals?: StravaActivityTotals;
+
   ytd_swim_totals?: StravaActivityTotals;
 
   all_ride_totals?: StravaActivityTotals;
+
   all_run_totals?: StravaActivityTotals;
+
   all_swim_totals?: StravaActivityTotals;
 }
 
 /**
  * Fetch Strava's athlete statistics.
  *
- * Useful when you want Strava's own
- * calculated YTD running/ride/swim totals.
+ * Uses the authenticated athlete ID
+ * from the persistent Strava authentication.
  */
 export async function getAthleteStats(
   athleteId?: number | string,
 ): Promise<StravaAthleteStats> {
-  const session =
-    await getStravaSession();
+  const auth =
+    await getStravaAuth();
 
-  if (!session) {
-    throw new Error(
-      "Strava account is not connected.",
-    );
+  if (!auth) {
+    throw new Error("Strava account is not connected.");
   }
 
-  const id =
-    athleteId ?? session.athleteId;
+  const id = athleteId ?? auth.athleteId;
 
   if (!id) {
-    throw new Error(
-      "Strava athlete ID is not available.",
-    );
+    throw new Error("Strava athlete ID is not available.");
   }
 
   return stravaFetch<StravaAthleteStats>(
-    `/athletes/${id}/stats`,
+    `/athletes/${encodeURIComponent(
+      String(id),
+    )}/stats`,
   );
 }

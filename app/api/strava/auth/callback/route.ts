@@ -1,18 +1,43 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-import { COOKIE_NAME, createStravaSession } from "@/lib/strava/session";
+import {
+  STRAVA_AUTH_COOKIE,
+  encryptStravaAuth,
+} from "@/lib/strava/auth";
 
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
+export const dynamic = "force-dynamic";
 
-  const code = searchParams.get("code");
-  const error = searchParams.get("error");
+export async function GET(
+  request: NextRequest,
+) {
+  const searchParams =
+    request.nextUrl.searchParams;
+
+  const code =
+    searchParams.get("code");
+
+  const error =
+    searchParams.get("error");
+
+  /* ------------------------------------------------------------------------ */
+  /* Strava denied authorization                                             */
+  /* ------------------------------------------------------------------------ */
 
   if (error) {
     return NextResponse.redirect(
-      new URL("/more?strava=denied", request.url),
+      new URL(
+        "/more?strava=denied",
+        request.url,
+      ),
     );
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Authorization code                                                       */
+  /* ------------------------------------------------------------------------ */
 
   if (!code) {
     return new NextResponse(
@@ -23,11 +48,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const clientId = process.env.STRAVA_CLIENT_ID;
+  /* ------------------------------------------------------------------------ */
+  /* Environment variables                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const clientId =
+    process.env.STRAVA_CLIENT_ID;
+
   const clientSecret =
     process.env.STRAVA_CLIENT_SECRET;
 
-  if (!clientId || !clientSecret) {
+  if (
+    !clientId ||
+    !clientSecret
+  ) {
     return new NextResponse(
       "Strava credentials are missing.",
       {
@@ -37,30 +71,59 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(
-      "https://www.strava.com/oauth/token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/x-www-form-urlencoded",
+    /* ---------------------------------------------------------------------- */
+    /* Exchange authorization code for tokens                                */
+    /* ---------------------------------------------------------------------- */
+
+    const response =
+      await fetch(
+        "https://www.strava.com/oauth/token",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+
+          body:
+            new URLSearchParams({
+              client_id:
+                clientId,
+
+              client_secret:
+                clientSecret,
+
+              code,
+
+              grant_type:
+                "authorization_code",
+            }),
+
+          cache: "no-store",
         },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-          grant_type: "authorization_code",
-        }),
-        cache: "no-store",
-      },
-    );
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => null,
+        );
+
+    /* ---------------------------------------------------------------------- */
+    /* Token exchange failed                                                  */
+    /* ---------------------------------------------------------------------- */
 
     if (!response.ok) {
-      const errorText = await response.text();
-
       console.error(
         "Strava token exchange failed:",
-        errorText,
+        {
+          status:
+            response.status,
+
+          data,
+        },
       );
 
       return new NextResponse(
@@ -71,14 +134,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const token = await response.json();
+    /* ---------------------------------------------------------------------- */
+    /* Validate Strava response                                               */
+    /* ---------------------------------------------------------------------- */
 
     if (
-      !token.access_token ||
-      !token.refresh_token ||
-      !token.expires_at ||
-      !token.athlete?.id
+      typeof data?.access_token !==
+        "string" ||
+      typeof data?.refresh_token !==
+        "string" ||
+      typeof data?.expires_at !==
+        "number" ||
+      typeof data?.athlete?.id !==
+        "number"
     ) {
+      console.error(
+        "Invalid Strava OAuth response:",
+        data,
+      );
+
       return new NextResponse(
         "Invalid response from Strava.",
         {
@@ -87,15 +161,39 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const session = await createStravaSession({
-      athleteId: token.athlete.id,
-      firstname: token.athlete.firstname,
-      lastname: token.athlete.lastname,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token,
-      expiresAt: token.expires_at,
-      scope: token.scope ?? "",
-    });
+    /* ---------------------------------------------------------------------- */
+    /* Create encrypted authentication                                        */
+    /* ---------------------------------------------------------------------- */
+
+    const encryptedAuth =
+      await encryptStravaAuth({
+        athleteId:
+          data.athlete.id,
+
+        firstname:
+          data.athlete.firstname ??
+          "",
+
+        lastname:
+          data.athlete.lastname ??
+          "",
+
+        accessToken:
+          data.access_token,
+
+        refreshToken:
+          data.refresh_token,
+
+        expiresAt:
+          data.expires_at,
+
+        scope:
+          data.scope ?? "",
+      });
+
+    /* ---------------------------------------------------------------------- */
+    /* Redirect after successful connection                                   */
+    /* ---------------------------------------------------------------------- */
 
     const responseWithCookie =
       NextResponse.redirect(
@@ -105,14 +203,43 @@ export async function GET(request: NextRequest) {
         ),
       );
 
+    /* ---------------------------------------------------------------------- */
+    /* Persistent encrypted cookie                                            */
+    /* ---------------------------------------------------------------------- */
+
     responseWithCookie.cookies.set({
-      name: COOKIE_NAME,
-      value: session,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      name:
+        STRAVA_AUTH_COOKIE,
+
+      value:
+        encryptedAuth,
+
+      httpOnly:
+        true,
+
+      secure:
+        process.env.NODE_ENV ===
+        "production",
+
+      sameSite:
+        "lax",
+
       path: "/",
-      maxAge: 60 * 60 * 24 * 30,
+
+      /*
+       * Long-lived application cookie.
+       *
+       * The Strava access token is still
+       * short-lived. When it expires,
+       * lib/strava/auth.ts refreshes it
+       * using the refresh token.
+       */
+      maxAge:
+        60 *
+        60 *
+        24 *
+        365 *
+        10,
     });
 
     return responseWithCookie;
