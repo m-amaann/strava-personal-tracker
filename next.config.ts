@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "**.strava.com",
       },
+      {
+        protocol: "https",
+        hostname: "dgalywyr863hv.cloudfront.net",
+      },
     ],
   },
 };

@@ -3,9 +3,6 @@ import { cookies } from "next/headers";
 import {
   STRAVA_AUTH_COOKIE,
   decryptStravaAuth,
-  encryptStravaAuth,
-  isAccessTokenExpired,
-  refreshStravaAuth,
 } from "@/lib/strava/auth";
 
 import type {
@@ -19,28 +16,34 @@ import type {
 /* -------------------------------------------------------------------------- */
 
 const STRAVA_API_URL =
-  "https://api-v3.strava.com";
+  "https://www.strava.com/api/v3";
 
 /* -------------------------------------------------------------------------- */
 /* Authentication                                                             */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Get a valid Strava authentication object.
+ * Get the current Strava authentication.
  *
- * This function:
+ * IMPORTANT:
  *
- * 1. Reads the encrypted authentication cookie.
- * 2. Decrypts the authentication data.
- * 3. Checks the access-token expiration.
- * 4. Refreshes the access token when necessary.
- * 5. Saves the new access/refresh tokens back to the cookie.
+ * This function ONLY READS the authentication cookie.
  *
- * No database is required.
+ * It does NOT:
+ * - refresh the access token
+ * - modify cookies
+ * - call cookieStore.set()
+ *
+ * Server Components are allowed to READ cookies,
+ * but they cannot modify them.
+ *
+ * Token refreshing is handled separately:
+ *
+ * - proxy.ts handles normal page requests
+ * - app/api/strava/route.ts handles API requests
  */
 export async function getStravaAuth() {
-  const cookieStore =
-    await cookies();
+  const cookieStore = await cookies();
 
   const authCookie =
     cookieStore.get(
@@ -51,94 +54,27 @@ export async function getStravaAuth() {
     return null;
   }
 
-  const auth =
-    await decryptStravaAuth(
-      authCookie,
-    );
+  const auth = await decryptStravaAuth(authCookie);
 
   if (!auth) {
     return null;
   }
 
-  /*
-   * Access token is still valid.
-   */
-  if (
-    !isAccessTokenExpired(
-      auth.expiresAt,
-    )
-  ) {
-    return auth;
-  }
-
-  /*
-   * Access token is expired or
-   * approaching expiration.
-   *
-   * Get a new access token using
-   * the refresh token.
-   */
-  const refreshed =
-    await refreshStravaAuth(
-      auth,
-    );
-
-  /*
-   * Encrypt the new authentication
-   * information.
-   */
-  const encrypted =
-    await encryptStravaAuth(
-      refreshed,
-    );
-
-  /*
-   * Save the new authentication
-   * back to the browser cookie.
-   */
-  cookieStore.set({
-    name:
-      STRAVA_AUTH_COOKIE,
-
-    value:
-      encrypted,
-
-    httpOnly:
-      true,
-
-    secure:
-      process.env.NODE_ENV ===
-      "production",
-
-    sameSite:
-      "lax",
-
-    path: "/",
-
-    /*
-     * Long-lived application cookie.
-     *
-     * The Strava access token itself
-     * still expires normally.
-     *
-     * getStravaAuth() automatically
-     * refreshes it when required.
-     */
-    maxAge:
-      60 *
-      60 *
-      24 *
-      365 *
-      10,
-  });
-
-  return refreshed;
+  return auth;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Generic Strava Request                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Make an authenticated request to the Strava API.
+ *
+ * This function reads the already-valid authentication
+ * from the cookie.
+ *
+ * It does NOT modify the cookie.
+ */
 async function stravaFetch<T>(
   endpoint: string,
 ): Promise<T> {
@@ -166,8 +102,7 @@ async function stravaFetch<T>(
         },
 
         /*
-         * Always fetch fresh data
-         * from Strava.
+         * Always get fresh data from Strava.
          */
         cache: "no-store",
       },
@@ -206,6 +141,9 @@ async function stravaFetch<T>(
 /* Athlete                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Get the currently authenticated Strava athlete.
+ */
 export async function getAthlete(): Promise<StravaAthlete> {
   return stravaFetch<StravaAthlete>(
     "/athlete",
@@ -216,6 +154,9 @@ export async function getAthlete(): Promise<StravaAthlete> {
 /* Connection                                                                 */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Check whether a Strava authentication cookie exists.
+ */
 export async function isStravaConnected(): Promise<boolean> {
   const auth =
     await getStravaAuth();
@@ -282,6 +223,9 @@ export async function getAllActivities(): Promise<
         perPage,
       );
 
+    /*
+     * No more activities.
+     */
     if (
       activities.length ===
       0
@@ -348,6 +292,9 @@ export async function getYearToDateActivities(): Promise<
         perPage,
       );
 
+    /*
+     * No more activities.
+     */
     if (
       pageActivities.length ===
       0
@@ -492,6 +439,9 @@ export async function getRecentYearRuns(
 /* Single Activity                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Fetch a single Strava activity.
+ */
 export async function getActivity(
   activityId: number | string,
 ): Promise<StravaActivity> {
@@ -506,6 +456,9 @@ export async function getActivity(
 /* Activity Streams                                                           */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Fetch detailed streams for an activity.
+ */
 export async function getActivityStreams(
   activityId: number | string,
 ): Promise<StravaActivityStreams> {
@@ -590,13 +543,19 @@ export async function getAthleteStats(
     await getStravaAuth();
 
   if (!auth) {
-    throw new Error("Strava account is not connected.");
+    throw new Error(
+      "Strava account is not connected.",
+    );
   }
 
-  const id = athleteId ?? auth.athleteId;
+  const id =
+    athleteId ??
+    auth.athleteId;
 
   if (!id) {
-    throw new Error("Strava athlete ID is not available.");
+    throw new Error(
+      "Strava athlete ID is not available.",
+    );
   }
 
   return stravaFetch<StravaAthleteStats>(

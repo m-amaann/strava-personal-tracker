@@ -14,11 +14,17 @@ import { isRunningActivity } from "@/lib/strava/activity-utils";
 
 import type { StravaActivity } from "@/lib/strava/types";
 
+/* -------------------------------------------------------------------------- */
+/* Date helpers                                                               */
+/* -------------------------------------------------------------------------- */
+
 function getStartOfWeek(date: Date) {
   const result = new Date(date);
 
   const day = result.getDay();
-  const difference = day === 0 ? 6 : day - 1;
+
+  const difference =
+    day === 0 ? 6 : day - 1;
 
   result.setDate(
     result.getDate() - difference,
@@ -29,24 +35,26 @@ function getStartOfWeek(date: Date) {
   return result;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Formatting                                                                 */
+/* -------------------------------------------------------------------------- */
+
 function formatDistance(meters: number) {
-  if (!Number.isFinite(meters) || meters <= 0) {
+  if (
+    !Number.isFinite(meters) ||
+    meters <= 0
+  ) {
     return "0.00";
   }
 
   return (meters / 1000).toFixed(2);
 }
 
-/**
- * Display Strava's moving_time exactly as:
- *
- * 32:40
- * 1:02:35
- *
- * We do NOT remove seconds.
- */
 function formatDuration(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds < 0) {
+  if (
+    !Number.isFinite(seconds) ||
+    seconds < 0
+  ) {
     return "0:00";
   }
 
@@ -76,18 +84,10 @@ function formatDuration(seconds: number) {
     .padStart(2, "0")}`;
 }
 
-/**
- * Average pace is calculated from Strava's:
- *
- * moving_time / distance
- *
- * Distance is meters.
- * Moving time is seconds.
- *
- * Result:
- * 5.05 km + 1960 seconds
- * => 6:28 /km
- */
+/* -------------------------------------------------------------------------- */
+/* Pace                                                                       */
+/* -------------------------------------------------------------------------- */
+
 function formatPace(
   movingTime: number,
   distance: number,
@@ -101,32 +101,33 @@ function formatPace(
     return "—";
   }
 
-  const kilometers = distance / 1000;
+  const kilometers =
+    distance / 1000;
 
   const secondsPerKm =
     movingTime / kilometers;
 
-  const minutes = Math.floor(
+  let minutes = Math.floor(
     secondsPerKm / 60,
   );
 
-  const seconds = Math.round(
+  let seconds = Math.round(
     secondsPerKm % 60,
   );
 
-  /**
-   * Handle rounding such as:
-   *
-   * 5:59.8 -> 6:00
-   */
   if (seconds === 60) {
-    return `${minutes + 1}:00`;
+    minutes += 1;
+    seconds = 0;
   }
 
   return `${minutes}:${seconds
     .toString()
     .padStart(2, "0")}`;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Percentage change                                                          */
+/* -------------------------------------------------------------------------- */
 
 function percentageChange(
   current: number,
@@ -143,6 +144,10 @@ function percentageChange(
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Weekly Summary                                                             */
+/* -------------------------------------------------------------------------- */
+
 export async function WeeklySummary() {
   const activities: StravaActivity[] = [];
 
@@ -154,8 +159,7 @@ export async function WeeklySummary() {
       new Date(currentWeekStart);
 
     previousWeekStart.setDate(
-      previousWeekStart.getDate() -
-        7,
+      previousWeekStart.getDate() - 7,
     );
 
     let page = 1;
@@ -177,14 +181,12 @@ export async function WeeklySummary() {
         ...pageActivities,
       );
 
-      /**
-       * Strava returns activities
-       * newest first.
-       *
-       * Once the oldest activity
-       * on this page is older than
-       * the previous week, we don't
-       * need to fetch more pages.
+      /*
+       * Strava returns activities newest
+       * first. Once the oldest activity
+       * on the current page is older than
+       * the previous week, no more pages
+       * are required.
        */
       const oldest =
         pageActivities[
@@ -215,6 +217,10 @@ export async function WeeklySummary() {
     );
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Week boundaries                                                          */
+  /* ------------------------------------------------------------------------ */
+
   const currentWeekStart =
     getStartOfWeek(new Date());
 
@@ -232,9 +238,10 @@ export async function WeeklySummary() {
     previousWeekStart.getDate() - 7,
   );
 
-  /**
-   * Current week runs
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Current week runs                                                        */
+  /* ------------------------------------------------------------------------ */
+
   const currentRuns =
     activities.filter(
       (activity) => {
@@ -255,9 +262,10 @@ export async function WeeklySummary() {
       },
     );
 
-  /**
-   * Previous week runs
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Previous week runs                                                       */
+  /* ------------------------------------------------------------------------ */
+
   const previousRuns =
     activities.filter(
       (activity) => {
@@ -278,12 +286,10 @@ export async function WeeklySummary() {
       },
     );
 
-  /**
-   * Current week distance.
-   *
-   * Uses Strava's activity.distance
-   * directly in meters.
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Distance                                                                 */
+  /* ------------------------------------------------------------------------ */
+
   const currentDistance =
     currentRuns.reduce(
       (total, activity) =>
@@ -291,9 +297,6 @@ export async function WeeklySummary() {
       0,
     );
 
-  /**
-   * Previous week distance.
-   */
   const previousDistance =
     previousRuns.reduce(
       (total, activity) =>
@@ -301,16 +304,10 @@ export async function WeeklySummary() {
       0,
     );
 
-  /**
-   * Current week moving time.
-   *
-   * IMPORTANT:
-   * This is Strava's actual
-   * moving_time value.
-   *
-   * Do not calculate this from
-   * pace or distance.
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Moving time                                                              */
+  /* ------------------------------------------------------------------------ */
+
   const currentTime =
     currentRuns.reduce(
       (total, activity) =>
@@ -319,16 +316,9 @@ export async function WeeklySummary() {
       0,
     );
 
-  /**
-   * Previous week moving time.
-   */
-  const previousTime =
-    previousRuns.reduce(
-      (total, activity) =>
-        total +
-        activity.moving_time,
-      0,
-    );
+  /* ------------------------------------------------------------------------ */
+  /* Comparison                                                               */
+  /* ------------------------------------------------------------------------ */
 
   const change =
     percentageChange(
@@ -341,132 +331,368 @@ export async function WeeklySummary() {
       previousDistance) /
     1000;
 
-  /**
-   * Average pace for the week.
-   *
-   * Total moving time / total distance.
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Pace                                                                     */
+  /* ------------------------------------------------------------------------ */
+
   const pace = formatPace(
     currentTime,
     currentDistance,
   );
 
-  /**
-   * Keep this available if you later
-   * want to show previous-week time.
-   */
-  void previousTime;
+  /* ------------------------------------------------------------------------ */
+  /* UI                                                                       */
+  /* ------------------------------------------------------------------------ */
 
   return (
-    <Card className="relative overflow-hidden border border-blue-100 bg-white text-slate-900 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-white">
-      <div className="pointer-events-none absolute -right-16 -top-20 size-52 rounded-full bg-blue-500/5 dark:bg-blue-400/5" />
+    <Card
+      className="
+        relative
+        overflow-hidden
+        rounded-2xl
+        border
+        border-border/70
+        bg-card
+        shadow-none
+      "
+    >
+      {/* Decorative circle */}
 
-      <div className="relative p-5 sm:p-6 lg:p-7">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
+      <div
+        className="
+          pointer-events-none
+          absolute
+          -right-16
+          -top-20
+          size-52
+          rounded-full
+          bg-[#FC4C02]/5
+        "
+      />
+
+      <div
+        className="
+          relative
+          p-4
+          sm:p-5
+          md:p-6
+        "
+      >
+        {/* ================================================================ */}
+        {/* HEADER                                                           */}
+        {/* ================================================================ */}
+
+        <div
+          className="
+            flex
+            items-start
+            justify-between
+            gap-4
+          "
+        >
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            <p
+              className="
+                text-[10px]
+                font-bold
+                uppercase
+                tracking-[0.16em]
+                text-muted-foreground
+              "
+            >
               This Week
             </p>
 
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            <p
+              className="
+                mt-1
+                text-[11px]
+                text-muted-foreground
+                sm:text-xs
+              "
+            >
               Running distance
             </p>
           </div>
 
+          {/* Week comparison */}
+
           <div
-            className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold ${
-              change >= 0
-                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-                : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
-            }`}
+            className={`
+              flex
+              shrink-0
+              items-center
+              gap-1
+              rounded-full
+              px-2.5
+              py-1.5
+              text-[10px]
+              font-semibold
+              ${
+                change >= 0
+                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
+                  : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
+              }
+            `}
           >
             {change >= 0 ? (
-              <TrendingUp className="size-3.5" />
+              <TrendingUp className="size-3" />
             ) : (
-              <TrendingDown className="size-3.5" />
+              <TrendingDown className="size-3" />
             )}
 
-            {Math.abs(change).toFixed(1)}%
+            {Math.abs(change).toFixed(
+              1,
+            )}
+            %
           </div>
         </div>
 
-        {/* Distance */}
+        {/* ================================================================ */}
+        {/* DISTANCE                                                          */}
+        {/* ================================================================ */}
+
         <div className="mt-5">
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-bold tracking-tight sm:text-5xl">
+            <span
+              className="
+                text-4xl
+                font-bold
+                tracking-[-0.04em]
+                text-foreground
+                sm:text-5xl
+              "
+            >
               {formatDistance(
                 currentDistance,
               )}
             </span>
 
-            <span className="text-base font-medium text-slate-500 dark:text-slate-400">
+            <span
+              className="
+                text-sm
+                font-medium
+                text-muted-foreground
+              "
+            >
               km
             </span>
           </div>
 
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
+          <p
+            className="
+              mt-1
+              text-[11px]
+              text-muted-foreground
+              sm:text-xs
+            "
+          >
             {distanceDifference >= 0
               ? "+"
               : ""}
-            {distanceDifference.toFixed(2)}{" "}
+            {distanceDifference.toFixed(
+              2,
+            )}{" "}
             km from last week
           </p>
         </div>
 
-        {/* Divider */}
-        <div className="my-6 h-px bg-slate-200 dark:bg-white/10" />
+        {/* ================================================================ */}
+        {/* DIVIDER                                                           */}
+        {/* ================================================================ */}
 
-        {/* Stats */}
+        <div
+          className="
+            my-5
+            h-px
+            bg-border/70
+            sm:my-6
+          "
+        />
+
+        {/* ================================================================ */}
+        {/* STATS                                                             */}
+        {/* ================================================================ */}
+
         <div className="grid grid-cols-3">
-          {/* Runs */}
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#FFF1EB] text-[#FC4C02] dark:bg-[#FC4C02]/10 dark:text-[#FF7043]">
-              <Activity className="size-4" />
+          {/* ---------------------------------------------------------------- */}
+          {/* Runs                                                              */}
+          {/* ---------------------------------------------------------------- */}
+
+          <div
+            className="
+              flex
+              items-center
+              gap-2
+              sm:gap-3
+            "
+          >
+            <div
+              className="
+                flex
+                size-8
+                shrink-0
+                items-center
+                justify-center
+                rounded-full
+                bg-[#FFF1EB]
+                text-[#FC4C02]
+                sm:size-9
+              "
+            >
+              <Activity
+                className="
+                  size-3.5
+                  sm:size-4
+                "
+              />
             </div>
 
-            <div>
-              <p className="text-sm font-bold">
+            <div className="min-w-0">
+              <p
+                className="
+                  truncate
+                  text-xs
+                  font-bold
+                  sm:text-sm
+                "
+              >
                 {currentRuns.length}
               </p>
 
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+              <p
+                className="
+                  text-[9px]
+                  text-muted-foreground
+                  sm:text-[10px]
+                "
+              >
                 Runs
               </p>
             </div>
           </div>
 
-          {/* Time */}
-          <div className="flex items-center gap-2.5 border-l border-slate-200 pl-4 dark:border-white/10 sm:pl-6">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400">
-              <Clock3 className="size-4" />
+          {/* ---------------------------------------------------------------- */}
+          {/* Time                                                              */}
+          {/* ---------------------------------------------------------------- */}
+
+          <div
+            className="
+              flex
+              items-center
+              gap-2
+              border-l
+              border-border/70
+              pl-3
+              sm:gap-3
+              sm:pl-5
+            "
+          >
+            <div
+              className="
+                flex
+                size-8
+                shrink-0
+                items-center
+                justify-center
+                rounded-full
+                bg-violet-50
+                text-violet-600
+                dark:bg-violet-500/10
+                dark:text-violet-400
+                sm:size-9
+              "
+            >
+              <Clock3
+                className="
+                  size-3.5
+                  sm:size-4
+                "
+              />
             </div>
 
-            <div>
-              <p className="text-sm font-bold">
+            <div className="min-w-0">
+              <p
+                className="
+                  truncate
+                  text-xs
+                  font-bold
+                  sm:text-sm
+                "
+              >
                 {formatDuration(
                   currentTime,
                 )}
               </p>
 
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+              <p
+                className="
+                  text-[9px]
+                  text-muted-foreground
+                  sm:text-[10px]
+                "
+              >
                 Time
               </p>
             </div>
           </div>
 
-          {/* Pace */}
-          <div className="flex items-center gap-2.5 border-l border-slate-200 pl-4 dark:border-white/10 sm:pl-6">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#FFF1EB] text-[#FC4C02] dark:bg-[#FC4C02]/10 dark:text-[#FF7043]">
-              <Zap className="size-4" />
+          {/* ---------------------------------------------------------------- */}
+          {/* Pace                                                              */}
+          {/* ---------------------------------------------------------------- */}
+
+          <div
+            className="
+              flex
+              items-center
+              gap-2
+              border-l
+              border-border/70
+              pl-3
+              sm:gap-3
+              sm:pl-5
+            "
+          >
+            <div
+              className="
+                flex
+                size-8
+                shrink-0
+                items-center
+                justify-center
+                rounded-full
+                bg-[#FFF1EB]
+                text-[#FC4C02]
+                sm:size-9
+              "
+            >
+              <Zap
+                className="
+                  size-3.5
+                  sm:size-4
+                "
+              />
             </div>
 
-            <div>
-              <p className="text-sm font-bold">
+            <div className="min-w-0">
+              <p
+                className="
+                  truncate
+                  text-xs
+                  font-bold
+                  sm:text-sm
+                "
+              >
                 {pace}
               </p>
 
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+              <p
+                className="
+                  text-[9px]
+                  text-muted-foreground
+                  sm:text-[10px]
+                "
+              >
                 Avg Pace
               </p>
             </div>

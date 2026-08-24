@@ -13,9 +13,11 @@ import {
   refreshStravaAuth,
 } from "@/lib/strava/auth";
 
-export const dynamic = "force-dynamic";
+export const dynamic =
+  "force-dynamic";
 
-const STRAVA_API_BASE = "https://api-v3.strava.com";
+const STRAVA_API_BASE =
+  "https://api-v3.strava.com";
 
 type Resource =
   | "athlete"
@@ -42,7 +44,9 @@ async function getValidAuth() {
   }
 
   const auth =
-    await decryptStravaAuth(token);
+    await decryptStravaAuth(
+      token,
+    );
 
   if (!auth) {
     return null;
@@ -60,8 +64,8 @@ async function getValidAuth() {
   }
 
   /*
-   * Access token is expired or
-   * has one hour or less remaining.
+   * Access token is expired or has
+   * one hour or less remaining.
    */
   const refreshed =
     await refreshStravaAuth(
@@ -69,8 +73,7 @@ async function getValidAuth() {
     );
 
   /*
-   * Encrypt the new access token,
-   * refresh token and expiration time.
+   * Encrypt the new authentication.
    */
   const encrypted =
     await encryptStravaAuth(
@@ -78,7 +81,8 @@ async function getValidAuth() {
     );
 
   /*
-   * Persist the refreshed authentication.
+   * Route Handler is allowed to
+   * modify cookies.
    */
   cookieStore.set({
     name:
@@ -87,8 +91,7 @@ async function getValidAuth() {
     value:
       encrypted,
 
-    httpOnly:
-      true,
+    httpOnly: true,
 
     secure:
       process.env.NODE_ENV ===
@@ -100,12 +103,13 @@ async function getValidAuth() {
     path: "/",
 
     /*
-     * Keep the authentication cookie
-     * for a long period.
+     * Long-lived application cookie.
      *
-     * The Strava access token itself
-     * still expires normally and is
-     * automatically refreshed above.
+     * This does NOT make the Strava
+     * access token permanent.
+     *
+     * The access token is refreshed
+     * automatically above.
      */
     maxAge:
       60 *
@@ -180,10 +184,7 @@ export async function GET(
 ) {
   try {
     /*
-     * This is the only authentication
-     * function required here.
-     *
-     * It automatically refreshes the
+     * Automatically refreshes the
      * Strava token when necessary.
      */
     const auth =
@@ -193,6 +194,7 @@ export async function GET(
       return NextResponse.json(
         {
           connected: false,
+
           error:
             "Strava account is not connected.",
         },
@@ -253,6 +255,7 @@ export async function GET(
 
         return NextResponse.json({
           connected: true,
+
           athlete:
             result.data,
         });
