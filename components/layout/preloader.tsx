@@ -1,6 +1,6 @@
 "use client";
 
-import Lottie from "lottie-react";
+import { useEffect, useRef } from "react";
 
 interface PreloaderProps {
   show?: boolean;
@@ -9,8 +9,83 @@ interface PreloaderProps {
 export function Preloader({
   show = true,
 }: PreloaderProps) {
+  const containerRef =
+    useRef<HTMLDivElement>(null);
+
+  const animationRef =
+    useRef<{
+      destroy: () => void;
+      setSpeed: (speed: number) => void;
+    } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function initializeAnimation() {
+      if (!containerRef.current) {
+        return;
+      }
+
+      const lottie =
+        await import("lottie-web");
+
+      if (
+        !mounted ||
+        !containerRef.current
+      ) {
+        return;
+      }
+
+      const animation =
+        lottie.default.loadAnimation({
+          container:
+            containerRef.current,
+
+          renderer: "svg",
+
+          loop: true,
+
+          autoplay: true,
+
+          path: "/Loading.json",
+
+          rendererSettings: {
+            preserveAspectRatio:
+              "xMidYMid meet",
+          },
+        });
+
+      /*
+       * Original animation:
+       * 30 FPS / 41 frames ≈ 1.37 seconds
+       *
+       * 0.45x makes it approximately
+       * 3 seconds per cycle.
+       *
+       * This gives the dots a much more
+       * relaxed and premium movement.
+       */
+      animation.setSpeed(0.45);
+
+      animationRef.current =
+        animation;
+    }
+
+    initializeAnimation();
+
+    return () => {
+      mounted = false;
+
+      animationRef.current?.destroy();
+
+      animationRef.current = null;
+    };
+  }, []);
+
   return (
     <div
+      role="status"
+      aria-label="Loading"
       aria-hidden={!show}
       className={`
         pointer-events-none
@@ -23,7 +98,7 @@ export function Preloader({
         bg-background/40
         backdrop-blur-[1px]
         transition-opacity
-        duration-300
+        duration-500
         ease-out
         ${
           show
@@ -33,21 +108,13 @@ export function Preloader({
       `}
     >
       <div
+        ref={containerRef}
         className="
-          flex
           size-32
-          items-center
-          justify-center
           sm:size-36
+          md:size-40
         "
-      >
-        <Lottie
-          animationData={loadingAnimation}
-          loop
-          autoplay
-          className="size-full"
-        />
-      </div>
+      />
     </div>
   );
 }

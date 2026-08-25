@@ -1,10 +1,6 @@
-import {
-  getActivities,
-} from "@/lib/strava/api";
+import { getActivities } from "@/lib/strava/api";
 
-import type {
-  StravaActivity,
-} from "@/lib/strava/types";
+import type { StravaActivity } from "@/lib/strava/types";
 
 /* -------------------------------------------------------------------------- */
 /* Activity Types                                                             */
@@ -14,7 +10,10 @@ export type ActivityType =
   | "running"
   | "cycling"
   | "swimming"
-  | "walking";
+  | "walking"
+  | "hiking"
+  | "workout"
+  | "gym";
 
 /* -------------------------------------------------------------------------- */
 /* Calendar Activity                                                          */
@@ -57,7 +56,13 @@ function getActivityType(
     activity.sport_type ??
     activity.type ??
     ""
-  ).toLowerCase();
+  )
+    .trim()
+    .toLowerCase();
+
+  /* ------------------------------------------------------------------------ */
+  /* Running                                                                  */
+  /* ------------------------------------------------------------------------ */
 
   if (
     type === "run" ||
@@ -66,13 +71,24 @@ function getActivityType(
     return "running";
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Cycling                                                                  */
+  /* ------------------------------------------------------------------------ */
+
   if (
     type === "ride" ||
     type === "cycling" ||
-    type === "virtualride"
+    type === "virtualride" ||
+    type === "virtual ride" ||
+    type === "ebikeride" ||
+    type === "e-bike ride"
   ) {
     return "cycling";
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Swimming                                                                 */
+  /* ------------------------------------------------------------------------ */
 
   if (
     type === "swim" ||
@@ -81,12 +97,49 @@ function getActivityType(
     return "swimming";
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Walking                                                                  */
+  /* ------------------------------------------------------------------------ */
+
   if (
     type === "walk" ||
-    type === "walking" ||
-    type === "hike"
+    type === "walking"
   ) {
     return "walking";
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Hiking                                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  if (
+    type === "hike" ||
+    type === "hiking"
+  ) {
+    return "hiking";
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Gym                                                                       */
+  /* ------------------------------------------------------------------------ */
+
+  if (
+    type === "weighttraining" ||
+    type === "weight training" ||
+    type === "gym"
+  ) {
+    return "gym";
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* General Workout                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  if (
+    type === "workout" ||
+    type === "training"
+  ) {
+    return "workout";
   }
 
   return null;
@@ -142,8 +195,7 @@ export async function getCalendarActivities(
     month,
   );
 
-  const results: CalendarActivity[] =
-    [];
+  const results: CalendarActivity[] = [];
 
   let page = 1;
 
@@ -168,13 +220,21 @@ export async function getCalendarActivities(
           activity.start_date_local,
         );
 
+      if (
+        !Number.isFinite(
+          activityDate.getTime(),
+        )
+      ) {
+        continue;
+      }
+
       /*
-       * Strava returns activities newest
-       * first.
+       * Strava normally returns activities
+       * newest first.
        *
-       * Once activities are older than
-       * the requested month, we can stop
-       * fetching additional pages.
+       * If we have moved before the requested
+       * month, there is no reason to request
+       * older pages.
        */
 
       if (
@@ -192,6 +252,11 @@ export async function getCalendarActivities(
             activity,
           );
 
+        /*
+         * Ignore unsupported Strava
+         * activity types.
+         */
+
         if (!type) {
           continue;
         }
@@ -208,18 +273,25 @@ export async function getCalendarActivities(
             activity.name,
 
           distance:
-            activity.distance,
+            Number.isFinite(
+              activity.distance,
+            )
+              ? activity.distance
+              : 0,
 
           movingTime:
-            activity.moving_time,
+            Number.isFinite(
+              activity.moving_time,
+            )
+              ? activity.moving_time
+              : 0,
         });
       }
     }
 
     /*
-     * If fewer than 200 activities
-     * were returned, there are no
-     * more pages.
+     * Fewer than 200 means there are
+     * no more pages.
      */
 
     if (
@@ -255,30 +327,22 @@ export async function getCalendarMonth(
       0,
     ).getDate();
 
-  const days: CalendarDayData[] =
-    [];
+  const days: CalendarDayData[] = [];
 
   for (
     let day = 1;
     day <= daysInMonth;
     day++
   ) {
-    /*
-     * Build YYYY-MM-DD without
-     * creating an unused Date object.
-     */
-
     const dateString =
       [
         year,
-
         String(
           month + 1,
         ).padStart(
           2,
           "0",
         ),
-
         String(day).padStart(
           2,
           "0",

@@ -9,8 +9,9 @@ export function ProgressHeader() {
         Progress
       </h1>
 
-      <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-        Track how your running performance is changing over time.
+      <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+        Understand how your running performance is changing
+        over time.
       </p>
     </header>
   );

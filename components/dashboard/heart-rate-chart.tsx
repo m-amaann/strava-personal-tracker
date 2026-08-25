@@ -11,7 +11,15 @@ import {
 } from "recharts";
 
 import { Card } from "@/components/ui/card";
-import { heartRateData } from "@/lib/mock/performance";
+
+export type HeartRatePoint = {
+  run: string;
+  heartRate: number;
+};
+
+interface HeartRateChartProps {
+  data?: HeartRatePoint[];
+}
 
 function HeartRateTooltip({
   active,
@@ -20,10 +28,7 @@ function HeartRateTooltip({
   active?: boolean;
   payload?: Array<{
     value: number;
-    payload: {
-      run: string;
-      heartRate: number;
-    };
+    payload: HeartRatePoint;
   }>;
 }) {
   if (!active || !payload?.length) {
@@ -45,7 +50,15 @@ function HeartRateTooltip({
   );
 }
 
-export function HeartRateChart() {
+export function HeartRateChart({
+  data = [],
+}: HeartRateChartProps) {
+  const hasData = data.length > 0;
+
+  const latestAverage = hasData
+    ? data[data.length - 1].heartRate
+    : null;
+
   return (
     <Card className="p-4 shadow-none sm:p-5">
       <div>
@@ -58,82 +71,104 @@ export function HeartRateChart() {
         </p>
       </div>
 
-      <div className="mt-5 h-57.5 w-full min-w-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={heartRateData}
-            margin={{
-              top: 8,
-              right: 4,
-              left: -12,
-              bottom: 0,
-            }}
-          >
-            <CartesianGrid
-              vertical={false}
-              stroke="currentColor"
-              strokeOpacity={0.08}
-            />
+      {!hasData ? (
+        <div className="flex h-57.5 items-center justify-center">
+          <p className="text-sm text-muted-foreground">
+            No heart-rate data available.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-5 h-57.5 w-full min-w-0">
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+            >
+              <LineChart
+                data={data}
+                margin={{
+                  top: 8,
+                  right: 4,
+                  left: -12,
+                  bottom: 0,
+                }}
+              >
+                <CartesianGrid
+                  vertical={false}
+                  stroke="currentColor"
+                  strokeOpacity={0.08}
+                />
 
-            <XAxis
-              dataKey="run"
-              axisLine={false}
-              tickLine={false}
-              tick={{
-                fontSize: 10,
-                fill: "currentColor",
-                opacity: 0.5,
-              }}
-              tickFormatter={(value) => value.split(" ")[0]}
-              interval="preserveStartEnd"
-            />
+                <XAxis
+                  dataKey="run"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{
+                    fontSize: 10,
+                    fill: "currentColor",
+                    opacity: 0.5,
+                  }}
+                  tickFormatter={(value) =>
+                    String(value).split(" ")[0]
+                  }
+                  interval="preserveStartEnd"
+                />
 
-            <YAxis
-              domain={["dataMin - 5", "dataMax + 5"]}
-              axisLine={false}
-              tickLine={false}
-              width={35}
-              tick={{
-                fontSize: 10,
-                fill: "currentColor",
-                opacity: 0.5,
-              }}
-              tickFormatter={(value) => `${value}`}
-            />
+                <YAxis
+                  domain={[
+                    "dataMin - 5",
+                    "dataMax + 5",
+                  ]}
+                  axisLine={false}
+                  tickLine={false}
+                  width={35}
+                  tick={{
+                    fontSize: 10,
+                    fill: "currentColor",
+                    opacity: 0.5,
+                  }}
+                  tickFormatter={(value) =>
+                    `${value}`
+                  }
+                />
 
-            <Tooltip
-              cursor={{
-                stroke: "currentColor",
-                strokeOpacity: 0.12,
-              }}
-              content={<HeartRateTooltip />}
-            />
+                <Tooltip
+                  cursor={{
+                    stroke: "currentColor",
+                    strokeOpacity: 0.12,
+                  }}
+                  content={<HeartRateTooltip />}
+                />
 
-            <Line
-              type="monotone"
-              dataKey="heartRate"
-              stroke="var(--chart-3)"
-              strokeWidth={2.5}
-              dot={false}
-              activeDot={{
-                r: 5,
-                strokeWidth: 2,
-                fill: "var(--background)",
-              }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+                <Line
+                  type="monotone"
+                  dataKey="heartRate"
+                  stroke="var(--chart-3)"
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{
+                    r: 5,
+                    strokeWidth: 2,
+                    fill: "var(--background)",
+                  }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
 
-      <div className="mt-3 flex items-center justify-between border-t pt-3">
-        <p className="text-xs text-muted-foreground">
-          Latest average
-        </p>
+          <div className="mt-3 flex items-center justify-between border-t pt-3">
+            <p className="text-xs text-muted-foreground">
+              Latest average
+            </p>
 
-        <p className="text-sm font-semibold">
-          148 bpm
-        </p>
-      </div>
+            <p className="text-sm font-semibold">
+              {latestAverage !== null
+                ? `${latestAverage} bpm`
+                : "—"}
+            </p>
+          </div>
+        </>
+      )}
     </Card>
   );
 }

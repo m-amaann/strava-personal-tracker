@@ -1,47 +1,198 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { usePathname } from "next/navigation";
 
 import { Preloader } from "@/components/layout/preloader";
+import { useAppReady } from "@/components/layout/app-ready-provider";
+
+const MINIMUM_DISPLAY_TIME = 450;
+const SAFETY_TIMEOUT = 4000;
 
 export function NavigationPreloader() {
   const pathname = usePathname();
 
-  /*
-   * Show loader when the application starts.
-   */
-  const [loading, setLoading] = useState(true);
+  const {
+    ready,
+    setReady,
+  } = useAppReady();
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const initialLoadRef =
+    useRef(true);
+
+  const navigationRef =
+    useRef(false);
 
   /*
-   * Prevent the pathname effect from treating
-   * the initial mount as a navigation.
+   * Do NOT initialize this with Date.now()
+   * or performance.now() during render.
    */
-  const [initialLoad, setInitialLoad] = useState(true);
+  const loadingStartedAtRef =
+    useRef<number | null>(null);
+
+  const hideTimerRef =
+    useRef<number | null>(null);
 
   /*
-   * Initial application load.
+   * ============================================================
+   * Start loading
+   * ============================================================
    */
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setLoading(false);
-      setInitialLoad(false);
-    }, 350);
 
-    return () => {
-      window.clearTimeout(timer);
-    };
+  const startLoading = useCallback(() => {
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(
+        hideTimerRef.current,
+      );
+
+      hideTimerRef.current = null;
+    }
+
+    /*
+     * performance.now() is called here,
+     * inside an event callback.
+     *
+     * This is allowed by React's purity rules.
+     */
+    loadingStartedAtRef.current =
+      performance.now();
+
+    setLoading(true);
   }, []);
 
   /*
-   * Detect internal navigation.
+   * ============================================================
+   * Stop loading
+   * ============================================================
    */
+
+  const stopLoading = useCallback(() => {
+    const startedAt =
+      loadingStartedAtRef.current;
+
+    /*
+     * If there is no recorded start time,
+     * simply hide the loader.
+     */
+    if (startedAt === null) {
+      setLoading(false);
+      return;
+    }
+
+    const elapsed =
+      performance.now() - startedAt;
+
+    const remaining =
+      Math.max(
+        0,
+        MINIMUM_DISPLAY_TIME - elapsed,
+      );
+
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(
+        hideTimerRef.current,
+      );
+    }
+
+    hideTimerRef.current =
+      window.setTimeout(() => {
+        setLoading(false);
+
+        hideTimerRef.current = null;
+
+        loadingStartedAtRef.current =
+          null;
+      }, remaining);
+  }, []);
+
+  /*
+   * ============================================================
+   * Initial application load
+   * ============================================================
+   *
+   * The preloader remains visible until:
+   *
+   * 1. The application reports ready
+   *
+   * OR
+   *
+   * 2. The 10-second safety timeout is reached.
+   */
+
   useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      /*
-       * Only normal left-clicks.
-       */
+    /*
+     * Start timing after the component
+     * has mounted, not during render.
+     */
+    loadingStartedAtRef.current =
+      performance.now();
+
+    const safetyTimer =
+      window.setTimeout(() => {
+        if (!initialLoadRef.current) {
+          return;
+        }
+
+        initialLoadRef.current =
+          false;
+
+        setReady();
+
+        stopLoading();
+      }, SAFETY_TIMEOUT);
+
+    return () => {
+      window.clearTimeout(
+        safetyTimer,
+      );
+    };
+  }, [setReady, stopLoading]);
+
+  /*
+   * ============================================================
+   * Application became ready
+   * ============================================================
+   */
+
+  useEffect(() => {
+    if (!initialLoadRef.current) {
+      return;
+    }
+
+    if (!ready) {
+      return;
+    }
+
+    initialLoadRef.current =
+      false;
+
+    stopLoading();
+  }, [ready, stopLoading]);
+
+  /*
+   * ============================================================
+   * Detect internal navigation
+   * ============================================================
+   *
+   * Capture phase is important.
+   *
+   * It lets us start the loader before
+   * Next.js processes the Link click.
+   */
+
+  useEffect(() => {
+    const handleClick = (
+      event: MouseEvent,
+    ) => {
       if (
         event.defaultPrevented ||
         event.button !== 0 ||
@@ -56,7 +207,8 @@ export function NavigationPreloader() {
       const target =
         event.target as HTMLElement | null;
 
-      const link = target?.closest("a");
+      const link =
+        target?.closest("a");
 
       if (!link) {
         return;
@@ -70,26 +222,62 @@ export function NavigationPreloader() {
       }
 
       /*
-       * Ignore external links,
-       * hash links, downloads,
-       * new tabs and javascript links.
+       * External links
        */
+
       if (
         href.startsWith("http://") ||
         href.startsWith("https://") ||
-        href.startsWith("#") ||
-        href.startsWith("javascript:") ||
-        link.target === "_blank" ||
+        href.startsWith("//")
+      ) {
+        return;
+      }
+
+      /*
+       * Hash links
+       */
+
+      if (href.startsWith("#")) {
+        return;
+      }
+
+      /*
+       * JavaScript links
+       */
+
+      if (
+        href.startsWith(
+          "javascript:",
+        )
+      ) {
+        return;
+      }
+
+      /*
+       * New tab
+       */
+
+      if (link.target === "_blank") {
+        return;
+      }
+
+      /*
+       * Downloads
+       */
+
+      if (
         link.hasAttribute("download")
       ) {
         return;
       }
 
       /*
-       * Do not show the page loader for
-       * API / OAuth requests.
+       * API requests
        */
-      if (href.startsWith("/api/")) {
+
+      if (
+        href.startsWith("/api/")
+      ) {
         return;
       }
 
@@ -107,6 +295,7 @@ export function NavigationPreloader() {
       /*
        * Ignore current page.
        */
+
       if (
         targetUrl.pathname ===
           currentUrl.pathname &&
@@ -119,51 +308,94 @@ export function NavigationPreloader() {
       }
 
       /*
-       * Start loader immediately.
+       * Prevent duplicate navigation
+       * loading states.
        */
-      setLoading(true);
+
+      if (navigationRef.current) {
+        return;
+      }
+
+      navigationRef.current =
+        true;
+
+      /*
+       * Start immediately.
+       */
+
+      startLoading();
     };
 
+    /*
+     * Capture phase.
+     */
     document.addEventListener(
       "click",
       handleClick,
+      true,
     );
 
     return () => {
       document.removeEventListener(
         "click",
         handleClick,
+        true,
       );
+    };
+  }, [startLoading]);
+
+  /*
+   * ============================================================
+   * Route changed
+   * ============================================================
+   */
+
+  useEffect(() => {
+    /*
+     * Don't treat the initial pathname
+     * as a navigation.
+     */
+
+    if (initialLoadRef.current) {
+      return;
+    }
+
+    if (!navigationRef.current) {
+      return;
+    }
+
+    navigationRef.current =
+      false;
+
+    /*
+     * Keep loader visible for the minimum
+     * display duration.
+     */
+
+    stopLoading();
+  }, [pathname, stopLoading]);
+
+  /*
+   * ============================================================
+   * Cleanup
+   * ============================================================
+   */
+
+  useEffect(() => {
+    return () => {
+      if (
+        hideTimerRef.current !== null
+      ) {
+        window.clearTimeout(
+          hideTimerRef.current,
+        );
+      }
     };
   }, []);
 
-  /*
-   * When pathname changes, the new route has
-   * arrived. Allow the preloader to exit.
-   */
-  useEffect(() => {
-    if (initialLoad) {
-      return;
-    }
-
-    if (!loading) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setLoading(false);
-    }, 150);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [
-    pathname,
-    loading,
-    initialLoad,
-  ]);
-
   return (
-    <Preloader show={loading} />
+    <Preloader
+      show={loading}
+    />
   );
 }

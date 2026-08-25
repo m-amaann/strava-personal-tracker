@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -11,7 +11,8 @@ import {
 } from "recharts";
 
 import { Card } from "@/components/ui/card";
-import type { ProgressPoint } from "@/lib/mock/progress";
+
+import type { ProgressPoint } from "./distance-progress-chart";
 
 interface HeartRateProgressChartProps {
   data: ProgressPoint[];
@@ -20,11 +21,13 @@ interface HeartRateProgressChartProps {
 export function HeartRateProgressChart({
   data,
 }: HeartRateProgressChartProps) {
+  const hasData = data.length > 0;
+
   return (
     <Card className="border-border/70 p-4 sm:p-5">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Heart Rate
+          Heart rate
         </p>
 
         <h2 className="mt-1 text-base font-bold">
@@ -37,86 +40,72 @@ export function HeartRateProgressChart({
       </div>
 
       <div className="mt-5 h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={data}
-            margin={{
-              top: 8,
-              right: 8,
-              left: -18,
-              bottom: 0,
-            }}
+        {!hasData ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            No heart-rate data available.
+          </div>
+        ) : (
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
           >
-            <defs>
-              <linearGradient
-                id="heartRateProgressGradient"
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
-                <stop
-                  offset="0%"
-                  stopColor="#10B981"
-                  stopOpacity={0.2}
-                />
-
-                <stop
-                  offset="100%"
-                  stopColor="#10B981"
-                  stopOpacity={0.02}
-                />
-              </linearGradient>
-            </defs>
-
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-              className="text-border"
-            />
-
-            <XAxis
-              dataKey="label"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 10 }}
-              className="fill-muted-foreground"
-            />
-
-            <YAxis
-              domain={["dataMin - 5", "dataMax + 5"]}
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 10 }}
-              className="fill-muted-foreground"
-            />
-
-            <Tooltip
-              formatter={(value) => [
-                `${value} bpm`,
-                "Heart Rate",
-              ]}
-              contentStyle={{
-                borderRadius: "10px",
-                border: "1px solid #e2e8f0",
-                boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+            <LineChart
+              data={data}
+              margin={{
+                top: 8,
+                right: 8,
+                left: -18,
+                bottom: 0,
               }}
-            />
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                className="text-border"
+              />
 
-            <Area
-              type="monotone"
-              dataKey="heartRate"
-              stroke="#10B981"
-              strokeWidth={2.5}
-              fill="url(#heartRateProgressGradient)"
-              dot={false}
-              activeDot={{
-                r: 5,
-                fill: "#10B981",
-              }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10 }}
+                className="fill-muted-foreground"
+              />
+
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10 }}
+                className="fill-muted-foreground"
+              />
+
+              <Tooltip
+                formatter={(value) => [
+                  `${Math.round(Number(value))} bpm`,
+                  "Heart rate",
+                ]}
+                contentStyle={{
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  boxShadow:
+                    "0 4px 16px rgba(0,0,0,0.08)",
+                }}
+              />
+
+              <Line
+                type="monotone"
+                dataKey="heartRate"
+                stroke="#F43F5E"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{
+                  r: 5,
+                  fill: "#F43F5E",
+                }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </Card>
   );

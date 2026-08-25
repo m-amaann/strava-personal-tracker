@@ -9,6 +9,7 @@ import { WeeklyDistanceChart } from "@/components/dashboard/weekly-distance-char
 import { PaceProgressionChart } from "@/components/dashboard/pace-progression-chart";
 import { HeartRateChart } from "@/components/dashboard/heart-rate-chart";
 import { ActivitySummary } from "@/components/dashboard/activity-summary";
+import { Greeting } from "@/components/dashboard/greeting";
 
 export default function Home() {
   return (
@@ -17,15 +18,15 @@ export default function Home() {
         {/* Header */}
         <header className="mb-6">
           <p className="text-sm font-medium text-muted-foreground">
-            Good evening, Amaan
+            <Greeting />
           </p>
 
           <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
-            Your performance
+            Your training overview
           </h1>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            Here&apos;s how your training is going.
+            A quick look at your recent activity and performance.
           </p>
         </header>
 

@@ -3,24 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
+
 import {
   BarChart3,
-  Footprints,
+  CalendarDays,
+  SportShoe,
   Home,
-  MoreHorizontal,
   Trophy,
 } from "lucide-react";
 
 const navItems = [
   {
-    label: "Home",
+    label: "Overview",
     href: "/",
     icon: Home,
   },
   {
     label: "Runs",
     href: "/runs",
-    icon: Footprints,
+    icon: SportShoe,
   },
   {
     label: "Progress",
@@ -28,14 +29,14 @@ const navItems = [
     icon: BarChart3,
   },
   {
+    label: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+  },
+  {
     label: "Records",
     href: "/records",
     icon: Trophy,
-  },
-  {
-    label: "More",
-    href: "/more",
-    icon: MoreHorizontal,
   },
 ];
 
@@ -43,36 +44,75 @@ export function MobileBottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/70 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_24px_rgba(0,0,0,0.06)] backdrop-blur-xl lg:hidden">
-      <div className="mx-auto flex h-16 max-w-md items-center justify-around px-1">
+    <nav
+      className="
+        fixed
+        inset-x-0
+        bottom-0
+        z-50
+        border-t
+        border-border/70
+        bg-background/95
+        pb-[env(safe-area-inset-bottom)]
+        shadow-[0_-6px_24px_rgba(0,0,0,0.06)]
+        backdrop-blur-xl
+        lg:hidden
+      "
+    >
+      <div
+        className="
+          mx-auto
+          flex
+          h-16
+          max-w-md
+          items-center
+          justify-around
+          px-1
+        "
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
 
           const active =
             item.href === "/"
               ? pathname === "/"
-              : pathname.startsWith(item.href);
+              : pathname === item.href ||
+                pathname.startsWith(
+                  `${item.href}/`,
+                );
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              className="group relative flex h-full min-w-16 flex-1 flex-col items-center justify-center gap-1"
+              className="
+                group
+                relative
+                flex
+                h-full
+                min-w-16
+                flex-1
+                flex-col
+                items-center
+                justify-center
+                gap-1
+              "
             >
-              {/* Animated icon container */}
               <motion.div
-                className="relative flex size-7 items-center justify-center"
+                className="
+                  relative
+                  flex
+                  size-7
+                  items-center
+                  justify-center
+                "
                 initial={false}
                 animate={{
-                  y: active ? -2 : 0,
-                  scale: active ? 1.08 : 1,
-                }}
-                whileHover={{
-                  y: -2,
-                  scale: 1.08,
+                  y: active ? -1 : 0,
+                  scale: active ? 1.06 : 1,
                 }}
                 whileTap={{
-                  scale: 0.88,
+                  scale: 0.9,
                 }}
                 transition={{
                   type: "spring",
@@ -81,43 +121,61 @@ export function MobileBottomNav() {
                   mass: 0.7,
                 }}
               >
-                {/* Soft active glow */}
                 <motion.div
-                  className="absolute inset-0 rounded-full bg-[#FC4C02]"
+                  className="
+                    absolute
+                    inset-0
+                    rounded-full
+                    bg-[#FC4C02]
+                  "
                   initial={false}
                   animate={{
-                    opacity: active ? 0.10 : 0,
+                    opacity: active ? 0.1 : 0,
                     scale: active ? 1.25 : 0.7,
                   }}
                   transition={{
-                    duration: 0.25,
+                    duration: 0.2,
                     ease: "easeOut",
                   }}
                 />
 
-                {/* Icon */}
                 <Icon
-                  className={`relative z-10 size-5 transition-colors duration-200 ${
-                    active
-                      ? "text-[#FC4C02]"
-                      : "text-muted-foreground group-hover:text-[#FC4C02]"
-                  }`}
-                  strokeWidth={active ? 2.3 : 1.8}
+                  className={`
+                    relative
+                    z-10
+                    size-5
+                    transition-colors
+                    duration-200
+                    ${
+                      active
+                        ? "text-[#FC4C02]"
+                        : "text-muted-foreground"
+                    }
+                  `}
+                  strokeWidth={
+                    active ? 2.2 : 1.7
+                  }
                 />
               </motion.div>
 
-              {/* Label */}
               <motion.span
                 initial={false}
                 animate={{
-                  opacity: active ? 1 : 0.75,
+                  opacity: active ? 1 : 0.7,
                   y: active ? 0 : 1,
                 }}
                 transition={{
                   duration: 0.2,
-                  ease: "easeOut",
                 }}
-                className="text-[10px] font-medium text-muted-foreground"
+                className={`
+                  text-[10px]
+                  font-medium
+                  ${
+                    active
+                      ? "text-[#FC4C02]"
+                      : "text-muted-foreground"
+                  }
+                `}
               >
                 {item.label}
               </motion.span>

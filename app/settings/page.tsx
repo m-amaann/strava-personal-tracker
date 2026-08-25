@@ -1,4 +1,5 @@
 import Image from "next/image";
+
 import {
   Link2,
   User,
@@ -6,12 +7,33 @@ import {
 
 import { AppShell } from "@/components/layout/app-shell";
 import { SettingsContent } from "@/components/settings/settings-content";
-import { getAthlete } from "@/lib/strava/api";
+
+import {
+  getAthlete,
+  getAllRuns,
+  getGear,
+} from "@/lib/strava/api";
+
+import type {
+  StravaActivity,
+  StravaAthlete,
+} from "@/lib/strava/types";
 
 export const dynamic = "force-dynamic";
 
+type GearItem = {
+  name: string;
+  status?: string;
+};
+
 export default async function SettingsPage() {
-  let athlete = null;
+  /*
+   * --------------------------------------------------------------------------
+   * Strava athlete
+   * --------------------------------------------------------------------------
+   */
+
+  let athlete: StravaAthlete | null = null;
 
   try {
     athlete = await getAthlete();
@@ -27,10 +49,157 @@ export default async function SettingsPage() {
   const connected = Boolean(athlete);
 
   const athleteName = athlete
-    ? [athlete.firstname, athlete.lastname]
+    ? [
+        athlete.firstname,
+        athlete.lastname,
+      ]
         .filter(Boolean)
         .join(" ")
     : "";
+
+  /*
+   * --------------------------------------------------------------------------
+   * Strava activities
+   * --------------------------------------------------------------------------
+   */
+
+  let runs: StravaActivity[] = [];
+
+  if (connected) {
+    try {
+      runs = await getAllRuns();
+    } catch (error) {
+      console.error(
+        "Failed to load Strava activities:",
+        error,
+      );
+
+      runs = [];
+    }
+  }
+
+  /*
+   * --------------------------------------------------------------------------
+   * Detect primary watch / device
+   * --------------------------------------------------------------------------
+   */
+
+  const deviceCounts =
+    new Map<string, number>();
+
+  for (const run of runs) {
+    const deviceName =
+      run.device_name?.trim();
+
+    if (!deviceName) {
+      continue;
+    }
+
+    deviceCounts.set(
+      deviceName,
+      (deviceCounts.get(deviceName) ?? 0) + 1,
+    );
+  }
+
+  let watch: GearItem | null = null;
+
+  const sortedDevices = Array.from(
+    deviceCounts.entries(),
+  ).sort(
+    (a, b) => b[1] - a[1],
+  );
+
+  const primaryDevice =
+    sortedDevices[0];
+
+  if (primaryDevice) {
+    const [
+      deviceName,
+      runCount,
+    ] = primaryDevice;
+
+    watch = {
+      name: deviceName,
+      status:
+        runCount === 1
+          ? "1 run recorded"
+          : `${runCount} runs recorded`,
+    };
+  }
+
+  /*
+   * --------------------------------------------------------------------------
+   * Find unique gear IDs
+   * --------------------------------------------------------------------------
+   */
+
+  const gearIds = Array.from(
+    new Set(
+      runs
+        .map(
+          (run) => run.gear_id,
+        )
+        .filter(
+          (
+            gearId,
+          ): gearId is string =>
+            typeof gearId === "string" &&
+            gearId.trim().length > 0,
+        ),
+    ),
+  );
+
+  /*
+   * --------------------------------------------------------------------------
+   * Fetch real Strava shoes
+   * --------------------------------------------------------------------------
+   */
+
+  const shoes: GearItem[] = [];
+
+  for (const gearId of gearIds) {
+    try {
+      const gear =
+        await getGear(gearId);
+
+      if (
+        !gear ||
+        typeof gear.name !== "string" ||
+        gear.name.trim().length === 0
+      ) {
+        continue;
+      }
+
+      const distance =
+        typeof gear.distance === "number" &&
+        Number.isFinite(gear.distance)
+          ? gear.distance
+          : null;
+
+      shoes.push({
+        name: gear.name.trim(),
+
+        ...(distance !== null
+          ? {
+              status: `${Math.round(
+                distance / 1000,
+              )} km`,
+            }
+          : {}),
+      });
+    } catch (error) {
+      console.error(
+        `Failed to load Strava gear ${gearId}:`,
+        error,
+      );
+    }
+  }
+
+  /*
+   * --------------------------------------------------------------------------
+   * Render
+   * --------------------------------------------------------------------------
+   */
 
   return (
     <AppShell>
@@ -39,32 +208,25 @@ export default async function SettingsPage() {
           mx-auto
           w-full
           max-w-7xl
-
           px-4
           pb-24
           pt-5
-
           sm:px-6
           sm:pt-6
-
           md:px-8
           md:pt-8
-
           lg:px-10
           lg:py-10
-
           xl:px-12
-
           2xl:px-16
         "
       >
-        {/* Header */}
+        {/* Page header */}
+
         <header
           className="
             mb-5
-
             sm:mb-6
-
             md:mb-8
           "
         >
@@ -73,7 +235,6 @@ export default async function SettingsPage() {
               text-xs
               font-medium
               text-muted-foreground
-
               sm:text-sm
             "
           >
@@ -86,9 +247,7 @@ export default async function SettingsPage() {
               text-2xl
               font-bold
               tracking-tight
-
               sm:text-3xl
-
               md:text-4xl
             "
           >
@@ -96,26 +255,24 @@ export default async function SettingsPage() {
           </h1>
         </header>
 
-        {/* Responsive page layout */}
         <div
           className="
             grid
             grid-cols-1
             gap-5
-
             sm:gap-6
-
             lg:grid-cols-[minmax(0,1fr)_280px]
             lg:items-start
             lg:gap-8
-
             xl:grid-cols-[minmax(0,1fr)_320px]
             xl:gap-10
           "
         >
-          {/* Main column */}
+          {/* Main content */}
+
           <div className="min-w-0">
-            {/* Connected Athlete */}
+            {/* Strava athlete */}
+
             {athlete && (
               <section
                 className="
@@ -133,10 +290,8 @@ export default async function SettingsPage() {
                     items-center
                     gap-3
                     p-4
-
                     sm:gap-4
                     sm:p-5
-
                     md:p-6
                   "
                 >
@@ -154,9 +309,7 @@ export default async function SettingsPage() {
                         shrink-0
                         rounded-full
                         object-cover
-
                         sm:size-12
-
                         md:size-14
                       "
                     />
@@ -171,18 +324,14 @@ export default async function SettingsPage() {
                         rounded-full
                         bg-[#FFF1EB]
                         text-[#FC4C02]
-
                         sm:size-12
-
                         md:size-14
                       "
                     >
                       <User
                         className="
                           size-5
-
                           sm:size-6
-
                           md:size-7
                         "
                       />
@@ -195,7 +344,6 @@ export default async function SettingsPage() {
                         truncate
                         text-sm
                         font-bold
-
                         sm:text-base
                       "
                     >
@@ -211,7 +359,6 @@ export default async function SettingsPage() {
                           truncate
                           text-[11px]
                           text-muted-foreground
-
                           sm:text-xs
                         "
                       >
@@ -233,7 +380,6 @@ export default async function SettingsPage() {
                       text-[9px]
                       font-semibold
                       text-emerald-600
-
                       sm:px-2.5
                       sm:text-[10px]
                     "
@@ -259,6 +405,7 @@ export default async function SettingsPage() {
             )}
 
             {/* Connection */}
+
             <section className="mt-5 sm:mt-6">
               <p
                 className="
@@ -269,7 +416,6 @@ export default async function SettingsPage() {
                   uppercase
                   tracking-[0.14em]
                   text-muted-foreground
-
                   sm:text-[11px]
                 "
               >
@@ -288,10 +434,8 @@ export default async function SettingsPage() {
                     border-border/70
                     bg-card
                     p-4
-
                     sm:gap-4
                     sm:p-5
-
                     md:p-6
                   "
                 >
@@ -305,7 +449,6 @@ export default async function SettingsPage() {
                       rounded-xl
                       bg-emerald-50
                       text-emerald-600
-
                       sm:size-11
                     "
                   >
@@ -345,7 +488,6 @@ export default async function SettingsPage() {
                           text-[9px]
                           font-semibold
                           text-emerald-600
-
                           sm:text-[10px]
                         "
                       >
@@ -367,7 +509,6 @@ export default async function SettingsPage() {
                         truncate
                         text-[11px]
                         text-muted-foreground
-
                         sm:text-xs
                       "
                     >
@@ -393,10 +534,8 @@ export default async function SettingsPage() {
                     p-4
                     transition-all
                     duration-200
-
                     sm:gap-4
                     sm:p-5
-
                     hover:border-[#FC4C02]/30
                     hover:shadow-sm
                   "
@@ -411,7 +550,6 @@ export default async function SettingsPage() {
                       rounded-xl
                       bg-[#FFF1EB]
                       text-[#FC4C02]
-
                       sm:size-11
                     "
                   >
@@ -429,7 +567,6 @@ export default async function SettingsPage() {
                         truncate
                         text-[11px]
                         text-muted-foreground
-
                         sm:text-xs
                       "
                     >
@@ -440,28 +577,25 @@ export default async function SettingsPage() {
               )}
             </section>
 
-            {/* Settings content */}
+            {/* Settings */}
+
             <div
               className="
                 mt-5
-
                 sm:mt-6
-
                 md:mt-8
               "
             >
-              <SettingsContent />
+              <SettingsContent
+                watch={watch}
+                shoes={shoes}
+              />
             </div>
           </div>
 
-          {/* Desktop information panel */}
-          <aside
-            className="
-              hidden
+          {/* Desktop side information */}
 
-              lg:block
-            "
-          >
+          <aside className="hidden lg:block">
             <div
               className="
                 sticky
@@ -471,7 +605,6 @@ export default async function SettingsPage() {
                 border-border/70
                 bg-card
                 p-5
-
                 xl:p-6
               "
             >

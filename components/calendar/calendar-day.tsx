@@ -4,7 +4,7 @@ import {
   Bike,
   PersonStanding,
   Waves,
-  Footprints,
+  SportShoe,
 } from "lucide-react";
 
 import type {
@@ -25,18 +25,16 @@ const activityConfig: Record<
   ActivityType,
   {
     background: string;
-    icon: typeof Footprints;
+    icon: typeof SportShoe;
   }
 > = {
   running: {
-    background:
-      "bg-[#FC4C02]",
-    icon: Footprints,
+    background: "bg-[#FC4C02]",
+    icon: SportShoe,
   },
 
   cycling: {
-    background:
-      "bg-blue-500",
+    background: "bg-blue-500",
     icon: Bike,
   },
 
@@ -68,8 +66,8 @@ export function CalendarDay({
   const config =
     primaryActivity
       ? activityConfig[
-          primaryActivity
-        ]
+      primaryActivity
+      ]
       : null;
 
   const Icon =
@@ -82,8 +80,8 @@ export function CalendarDay({
       aria-label={
         hasActivity
           ? `${day}, ${activityTypes.join(
-              ", ",
-            )} activity`
+            ", ",
+          )} activity`
           : `${day}`
       }
       className="
@@ -145,16 +143,15 @@ export function CalendarDay({
               group-hover:shadow-[0_4px_12px_rgba(0,0,0,0.18)]
               sm:size-9
 
-              ${
-                selected
-                  ? `
+              ${selected
+                ? `
                     scale-110
                     ring-2
                     ring-[#FC4C02]/30
                     ring-offset-2
                     ring-offset-background
                   `
-                  : ""
+                : ""
               }
             `}
           >

@@ -1,32 +1,51 @@
 "use client";
 
 import {
+  Bike,
   ChevronLeft,
   ChevronRight,
+  Dumbbell,
+  Footprints,
+  SportShoe,
+  Mountain,
+  Waves,
 } from "lucide-react";
 
-import {
-  useRouter,
-} from "next/navigation";
+import { useRouter } from "next/navigation";
 
-import {
-  Card,
-} from "@/components/ui/card";
-
-import {
-  CalendarDay,
-} from "@/components/calendar/calendar-day";
+import { Card } from "@/components/ui/card";
 
 import type {
   ActivityType,
+  CalendarActivity,
   CalendarDayData,
 } from "@/lib/strava/calendar";
 
-interface ActivityCalendarProps {
+/* -------------------------------------------------------------------------- */
+/* Props                                                                      */
+/* -------------------------------------------------------------------------- */
+
+type ActivityCalendarProps = {
   year: number;
+
   month: number;
+
   days: CalendarDayData[];
-}
+};
+
+/* -------------------------------------------------------------------------- */
+/* Constants                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const weekdays = [
+  "MON",
+  "TUE",
+  "WED",
+  "THU",
+  "FRI",
+  "SAT",
+  "SUN",
+];
 
 const monthNames = [
   "January",
@@ -43,307 +62,747 @@ const monthNames = [
   "December",
 ];
 
-const weekDays = [
-  "Mon",
-  "Tue",
-  "Wed",
-  "Thu",
-  "Fri",
-  "Sat",
-  "Sun",
-];
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function formatDistance(
+  meters: number,
+) {
+  return `${(
+    meters / 1000
+  ).toFixed(2)} km`;
+}
+
+function formatMovingTime(
+  seconds: number,
+) {
+  const minutes = Math.round(
+    seconds / 60,
+  );
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(
+    minutes / 60,
+  );
+
+  const remainingMinutes =
+    minutes % 60;
+
+  if (
+    remainingMinutes === 0
+  ) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Activity Icon                                                              */
+/* -------------------------------------------------------------------------- */
+
+function ActivityIcon({
+  type,
+}: {
+  type: ActivityType;
+}) {
+  switch (type) {
+    case "running":
+      return (
+        <SportShoe
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    case "cycling":
+      return (
+        <Bike
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    case "swimming":
+      return (
+        <Waves
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    case "walking":
+      return (
+        <Footprints
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    case "hiking":
+      return (
+        <Mountain
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    case "workout":
+      return (
+        <Dumbbell
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    case "gym":
+      return (
+        <Dumbbell
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+
+    default:
+      return (
+        <Footprints
+          className="size-4"
+          strokeWidth={2}
+        />
+      );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Activity Colors                                                            */
+/* -------------------------------------------------------------------------- */
+
+function getActivityStyle(
+  type: ActivityType,
+) {
+  switch (type) {
+    case "running":
+      return {
+        background:
+          "bg-[#FC4C02]",
+        text:
+          "text-white",
+      };
+
+    case "cycling":
+      return {
+        background:
+          "bg-blue-500",
+        text:
+          "text-white",
+      };
+
+    case "swimming":
+      return {
+        background:
+          "bg-cyan-500",
+        text:
+          "text-white",
+      };
+
+    case "walking":
+      return {
+        background:
+          "bg-emerald-500",
+        text:
+          "text-white",
+      };
+
+    case "hiking":
+      return {
+        background:
+          "bg-amber-500",
+        text:
+          "text-white",
+      };
+
+    case "workout":
+      return {
+        background:
+          "bg-purple-500",
+        text:
+          "text-white",
+      };
+
+    case "gym":
+      return {
+        background:
+          "bg-violet-500",
+        text:
+          "text-white",
+      };
+
+    default:
+      return {
+        background:
+          "bg-muted",
+        text:
+          "text-foreground",
+      };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export function ActivityCalendar({
   year,
   month,
   days,
 }: ActivityCalendarProps) {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const firstDayOffset = (() => {
-    const date = new Date(
+  const monthName =
+    monthNames[month] ??
+    "";
+
+  /* ------------------------------------------------------------------------ */
+  /* Previous Month                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  function goToPreviousMonth() {
+    const date =
+      new Date(
+        year,
+        month - 1,
+        1,
+      );
+
+    router.push(
+      `/calendar?year=${date.getFullYear()}&month=${date.getMonth()}`,
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Next Month                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  function goToNextMonth() {
+    const date =
+      new Date(
+        year,
+        month + 1,
+        1,
+      );
+
+    router.push(
+      `/calendar?year=${date.getFullYear()}&month=${date.getMonth()}`,
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Calendar Calculations                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const daysInMonth =
+    new Date(
+      year,
+      month + 1,
+      0,
+    ).getDate();
+
+  const firstDay =
+    new Date(
       year,
       month,
       1,
-    );
+    ).getDay();
 
-    const day = date.getDay();
+  /*
+   * JavaScript:
+   *
+   * Sunday = 0
+   * Monday = 1
+   *
+   * We want Monday-first.
+   */
 
-    return day === 0
+  const mondayOffset =
+    firstDay === 0
       ? 6
-      : day - 1;
-  })();
+      : firstDay - 1;
 
-  const calendarCells: (
-    | CalendarDayData
-    | null
-  )[] = [
-    ...Array<null>(
-      firstDayOffset,
-    ).fill(null),
-    ...days,
-  ];
+  /* ------------------------------------------------------------------------ */
+  /* Calendar Cells                                                           */
+  /* ------------------------------------------------------------------------ */
 
-  function navigateMonth(
-    targetYear: number,
-    targetMonth: number,
+  const calendarCells:
+    Array<number | null> = [];
+
+  for (
+    let i = 0;
+    i < mondayOffset;
+    i++
   ) {
-    const params =
-      new URLSearchParams();
-
-    params.set(
-      "year",
-      String(targetYear),
-    );
-
-    params.set(
-      "month",
-      String(targetMonth),
-    );
-
-    router.push(
-      `/calendar?${params.toString()}`,
+    calendarCells.push(
+      null,
     );
   }
 
-  function goToPreviousMonth() {
-    if (month === 0) {
-      navigateMonth(
-        year - 1,
-        11,
-      );
-      return;
-    }
-
-    navigateMonth(
-      year,
-      month - 1,
+  for (
+    let day = 1;
+    day <= daysInMonth;
+    day++
+  ) {
+    calendarCells.push(
+      day,
     );
   }
 
-  function goToNextMonth() {
-    if (month === 11) {
-      navigateMonth(
-        year + 1,
-        0,
-      );
-      return;
-    }
+  /* ------------------------------------------------------------------------ */
+  /* Activity Lookup                                                          */
+  /* ------------------------------------------------------------------------ */
 
-    navigateMonth(
-      year,
-      month + 1,
+  const activitiesByDate =
+    new Map<
+      string,
+      CalendarActivity[]
+    >();
+
+  for (const day of days) {
+    activitiesByDate.set(
+      day.date,
+      day.activities,
     );
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Month Activities                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  const monthActivities =
+    days.flatMap(
+      (day) =>
+        day.activities,
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                   */
+  /* ------------------------------------------------------------------------ */
 
   return (
-    <Card className="overflow-hidden border-border/70 shadow-none">
-      <div className="p-4 sm:p-6">
-        {/* Header */}
+    <Card
+      className="
+        overflow-hidden
+        border-border/70
+        shadow-none
+      "
+    >
+      {/* ================================================================== */}
+      {/* Header                                                             */}
+      {/* ================================================================== */}
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={
-              goToPreviousMonth
-            }
+      <div
+        className="
+          flex
+          items-center
+          justify-between
+          px-5
+          pt-5
+          sm:px-6
+          sm:pt-6
+        "
+      >
+        {/* Previous */}
+
+        <button
+          type="button"
+          onClick={
+            goToPreviousMonth
+          }
+          aria-label="Previous month"
+          className="
+            flex
+            size-8
+            items-center
+            justify-center
+            rounded-full
+            text-muted-foreground
+            transition-colors
+            hover:bg-muted
+            hover:text-foreground
+          "
+        >
+          <ChevronLeft
+            className="size-4"
+          />
+        </button>
+
+        {/* Month */}
+
+        <div className="text-center">
+          <h2
             className="
-              flex
-              size-9
-              items-center
-              justify-center
-              rounded-full
-              text-muted-foreground
-              transition-colors
-              hover:bg-muted
-              hover:text-foreground
+              text-base
+              font-bold
+              tracking-tight
+              sm:text-lg
             "
-            aria-label="Previous month"
           >
-            <ChevronLeft className="size-5" />
-          </button>
+            {monthName} {year}
+          </h2>
 
-          <div className="text-center">
-            <h1 className="text-base font-bold sm:text-lg">
-              {monthNames[month]}{" "}
-              {year}
-            </h1>
-
-            <p className="mt-0.5 text-[10px] text-muted-foreground">
-              Strava activities
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={
-              goToNextMonth
-            }
+          <p
             className="
-              flex
-              size-9
-              items-center
-              justify-center
-              rounded-full
+              mt-0.5
+              text-[10px]
               text-muted-foreground
-              transition-colors
-              hover:bg-muted
-              hover:text-foreground
             "
-            aria-label="Next month"
           >
-            <ChevronRight className="size-5" />
-          </button>
+            Strava activities
+          </p>
         </div>
 
-        {/* Week Header */}
+        {/* Next */}
 
-        <div className="mt-6 grid grid-cols-7">
-          {weekDays.map(
-            (day) => (
-              <div
-                key={day}
-                className="
-                  flex
-                  h-8
-                  items-center
-                  justify-center
-                  text-[10px]
-                  font-semibold
-                  uppercase
-                  tracking-wide
-                  text-muted-foreground
-                "
-              >
-                {day}
-              </div>
-            ),
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={
+            goToNextMonth
+          }
+          aria-label="Next month"
+          className="
+            flex
+            size-8
+            items-center
+            justify-center
+            rounded-full
+            text-muted-foreground
+            transition-colors
+            hover:bg-muted
+            hover:text-foreground
+          "
+        >
+          <ChevronRight
+            className="size-4"
+          />
+        </button>
+      </div>
 
-        {/* Calendar */}
+      {/* ================================================================== */}
+      {/* Weekdays                                                            */}
+      {/* ================================================================== */}
 
-        <div className="grid grid-cols-7">
-          {calendarCells.map(
-            (cell, index) => {
-              if (!cell) {
-                return (
-                  <div
-                    key={`empty-${index}`}
-                    className="h-13.5 sm:h-16.5"
-                  />
-                );
-              }
+      <div
+        className="
+          mt-6
+          grid
+          grid-cols-7
+          px-5
+          sm:px-6
+        "
+      >
+        {weekdays.map(
+          (weekday) => (
+            <div
+              key={weekday}
+              className="
+                text-center
+                text-[10px]
+                font-medium
+                text-muted-foreground
+              "
+            >
+              {weekday}
+            </div>
+          ),
+        )}
+      </div>
 
-              const activityTypes =
-                Array.from(
-                  new Set(
-                    cell.activities.map(
-                      (activity) =>
-                        activity.type,
-                    ),
-                  ),
-                ) as ActivityType[];
+      {/* ================================================================== */}
+      {/* Calendar Grid                                                       */}
+      {/* ================================================================== */}
 
+      <div
+        className="
+          mt-3
+          grid
+          grid-cols-7
+          gap-y-2
+          px-5
+          pb-5
+          sm:gap-y-3
+          sm:px-6
+          sm:pb-6
+        "
+      >
+        {calendarCells.map(
+          (day, index) => {
+            if (
+              day === null
+            ) {
               return (
-                <CalendarDay
-                  key={cell.date}
-                  day={cell.day}
-                  activityTypes={
-                    activityTypes
-                  }
-                  selected={false}
-                  onClick={() => {}}
+                <div
+                  key={`empty-${index}`}
+                  className="
+                    h-14
+                    sm:h-16
+                  "
                 />
               );
-            },
-          )}
-        </div>
+            }
 
-        {/* Activity Details */}
+            const dateKey =
+              `${year}-${String(
+                month + 1,
+              ).padStart(
+                2,
+                "0",
+              )}-${String(
+                day,
+              ).padStart(
+                2,
+                "0",
+              )}`;
 
-        <div className="mt-5 border-t border-border/70 pt-4">
-          {days.some(
-            (day) =>
-              day.activities.length >
-              0,
-          ) ? (
-            <>
-              <p className="text-xs font-semibold">
-                Activities
-              </p>
+            const activities =
+              activitiesByDate.get(
+                dateKey,
+              ) ?? [];
 
-              <div className="mt-3 space-y-2">
-                {days
-                  .filter(
-                    (day) =>
-                      day.activities
-                        .length > 0,
-                  )
-                  .flatMap(
-                    (day) =>
-                      day.activities.map(
-                        (activity) => (
-                          <div
-                            key={
-                              activity.id
-                            }
-                            className="
-                              flex
-                              items-center
-                              justify-between
-                              gap-3
-                              rounded-xl
-                              bg-muted/50
-                              px-3
-                              py-2.5
-                            "
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold">
-                                {
-                                  activity.name
-                                }
-                              </p>
+            const hasActivity =
+              activities.length >
+              0;
 
-                              <p className="mt-0.5 text-[10px] capitalize text-muted-foreground">
-                                {
-                                  activity.type
-                                }
-                              </p>
-                            </div>
+            /*
+             * If multiple activities
+             * happened on the same day,
+             * show the first activity icon.
+             *
+             * The activity list below
+             * still shows every activity.
+             */
 
-                            <div className="shrink-0 text-right">
-                              <p className="text-xs font-semibold">
-                                {(
-                                  activity.distance /
-                                  1000
-                                ).toFixed(
-                                  2,
-                                )}{" "}
-                                km
-                              </p>
+            const primaryActivity =
+              activities[0];
 
-                              <p className="text-[10px] text-muted-foreground">
-                                {Math.floor(
-                                  activity.movingTime /
-                                    60,
-                                )}
-                                m
-                              </p>
-                            </div>
-                          </div>
-                        ),
-                      ),
-                  )}
+            return (
+              <div
+                key={dateKey}
+                className="
+                  flex
+                  h-14
+                  items-center
+                  justify-center
+                  sm:h-16
+                "
+              >
+                {hasActivity &&
+                primaryActivity ? (
+                  <div
+                    title={activities
+                      .map(
+                        (activity) =>
+                          activity.name,
+                      )
+                      .join(", ")}
+                    className={`
+                      flex
+                      size-8
+                      items-center
+                      justify-center
+                      rounded-full
+                      shadow-sm
+                      ${getActivityStyle(
+                        primaryActivity.type,
+                      ).background}
+                      ${getActivityStyle(
+                        primaryActivity.type,
+                      ).text}
+                    `}
+                  >
+                    <ActivityIcon
+                      type={
+                        primaryActivity.type
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className="
+                      flex
+                      size-8
+                      items-center
+                      justify-center
+                      text-xs
+                      text-muted-foreground
+                    "
+                  >
+                    {day}
+                  </div>
+                )}
               </div>
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              No activities this month.
-            </p>
-          )}
-        </div>
+            );
+          },
+        )}
+      </div>
+
+      {/* ================================================================== */}
+      {/* Activities                                                          */}
+      {/* ================================================================== */}
+
+      <div
+        className="
+          border-t
+          border-border/70
+          px-5
+          py-5
+          sm:px-6
+        "
+      >
+        <p
+          className="
+            text-xs
+            font-semibold
+          "
+        >
+          Activities
+        </p>
+
+        {monthActivities.length ===
+        0 ? (
+          <p
+            className="
+              mt-4
+              text-xs
+              text-muted-foreground
+            "
+          >
+            No activities this month.
+          </p>
+        ) : (
+          <div
+            className="
+              mt-3
+              space-y-2
+            "
+          >
+            {monthActivities.map(
+              (activity) => {
+                const style =
+                  getActivityStyle(
+                    activity.type,
+                  );
+
+                return (
+                  <div
+                    key={activity.id}
+                    className="
+                      flex
+                      items-center
+                      justify-between
+                      rounded-xl
+                      bg-muted/40
+                      px-3
+                      py-2.5
+                    "
+                  >
+                    {/* Activity */}
+
+                    <div
+                      className="
+                        flex
+                        min-w-0
+                        items-center
+                        gap-3
+                      "
+                    >
+                      <div
+                        className={`
+                          flex
+                          size-8
+                          shrink-0
+                          items-center
+                          justify-center
+                          rounded-full
+                          ${style.background}
+                          ${style.text}
+                        `}
+                      >
+                        <ActivityIcon
+                          type={
+                            activity.type
+                          }
+                        />
+                      </div>
+
+                      <div
+                        className="
+                          min-w-0
+                        "
+                      >
+                        <p
+                          className="
+                            truncate
+                            text-xs
+                            font-medium
+                          "
+                        >
+                          {activity.name}
+                        </p>
+
+                        <p
+                          className="
+                            mt-0.5
+                            text-[10px]
+                            capitalize
+                            text-muted-foreground
+                          "
+                        >
+                          {activity.type}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Distance */}
+
+                    <div
+                      className="
+                        ml-4
+                        shrink-0
+                        text-right
+                      "
+                    >
+                      <p
+                        className="
+                          text-xs
+                          font-semibold
+                        "
+                      >
+                        {formatDistance(
+                          activity.distance,
+                        )}
+                      </p>
+
+                      <p
+                        className="
+                          mt-0.5
+                          text-[10px]
+                          text-muted-foreground
+                        "
+                      >
+                        {formatMovingTime(
+                          activity.movingTime,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                );
+              },
+            )}
+          </div>
+        )}
       </div>
     </Card>
   );
