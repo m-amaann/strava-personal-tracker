@@ -23,7 +23,7 @@ const jakarta =
 export const metadata: Metadata = {
   title: "EndrivoIQ",
   description:
-    "A personal performance journal for tracking running, cycling, training, and progress through real activity data and performance analytics.",
+    "Personal performance journal for tracking running, cycling, training, and progress through real activity data and performance analytics.",
 };
 
 export default function RootLayout({
