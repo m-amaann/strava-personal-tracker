@@ -1,21 +1,52 @@
 import { MetricCard } from "./metric-card";
 
 import { getActivities } from "@/lib/strava/api";
+
 import { isRunningActivity } from "@/lib/strava/activity-utils";
 
 import type { StravaActivity } from "@/lib/strava/types";
 
-function getStartOfWeek(date: Date) {
+/* -------------------------------------------------------------------------- */
+/* Configuration                                                              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Dashboard metric window.
+ *
+ * The cards use the last 4 weeks rather than the current
+ * Monday-Sunday week.
+ *
+ * This prevents the cards from becoming empty just because
+ * the user has not run yet in the current calendar week.
+ */
+const METRIC_WINDOW_DAYS = 28;
+
+/* -------------------------------------------------------------------------- */
+/* Date helpers                                                               */
+/* -------------------------------------------------------------------------- */
+
+function getStartOfDay(date: Date) {
   const result = new Date(date);
 
-  const day = result.getDay();
-  const difference = day === 0 ? 6 : day - 1;
-
-  result.setDate(
-    result.getDate() - difference,
+  result.setHours(
+    0,
+    0,
+    0,
+    0,
   );
 
-  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function getDaysAgo(
+  date: Date,
+  days: number,
+) {
+  const result = new Date(date);
+
+  result.setDate(
+    result.getDate() - days,
+  );
 
   return result;
 }
@@ -25,34 +56,59 @@ function getStartOfYear(date: Date) {
     date.getFullYear(),
     0,
     1,
+    0,
+    0,
+    0,
+    0,
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Formatting                                                                 */
+/* -------------------------------------------------------------------------- */
 
 function formatPace(
   movingTime: number,
   distance: number,
 ) {
   if (
+    !Number.isFinite(movingTime) ||
+    !Number.isFinite(distance) ||
     movingTime <= 0 ||
     distance <= 0
   ) {
     return "—";
   }
 
-  const secondsPerKm =
-    movingTime / (distance / 1000);
+  const kilometers =
+    distance / 1000;
 
-  const minutes = Math.floor(
-    secondsPerKm / 60,
-  );
-
-  const seconds = Math.round(
-    secondsPerKm % 60,
-  );
-
-  if (seconds === 60) {
-    return `${minutes + 1}:00`;
+  if (kilometers <= 0) {
+    return "—";
   }
+
+  const secondsPerKm =
+    movingTime / kilometers;
+
+  if (
+    !Number.isFinite(
+      secondsPerKm,
+    ) ||
+    secondsPerKm <= 0
+  ) {
+    return "—";
+  }
+
+  const roundedSeconds =
+    Math.round(secondsPerKm);
+
+  const minutes =
+    Math.floor(
+      roundedSeconds / 60,
+    );
+
+  const seconds =
+    roundedSeconds % 60;
 
   return `${minutes}:${seconds
     .toString()
@@ -64,13 +120,24 @@ function paceInSeconds(
   distance: number,
 ) {
   if (
+    !Number.isFinite(movingTime) ||
+    !Number.isFinite(distance) ||
     movingTime <= 0 ||
     distance <= 0
   ) {
     return 0;
   }
 
-  return movingTime / (distance / 1000);
+  const kilometers =
+    distance / 1000;
+
+  if (kilometers <= 0) {
+    return 0;
+  }
+
+  return (
+    movingTime / kilometers
+  );
 }
 
 function formatPaceDifference(
@@ -81,7 +148,7 @@ function formatPaceDifference(
     current <= 0 ||
     previous <= 0
   ) {
-    return "—";
+    return undefined;
   }
 
   const difference =
@@ -90,13 +157,16 @@ function formatPaceDifference(
   const absolute =
     Math.abs(difference);
 
-  const minutes = Math.floor(
-    absolute / 60,
-  );
+  const roundedSeconds =
+    Math.round(absolute);
 
-  const seconds = Math.round(
-    absolute % 60,
-  );
+  const minutes =
+    Math.floor(
+      roundedSeconds / 60,
+    );
+
+  const seconds =
+    roundedSeconds % 60;
 
   const formatted =
     `${minutes}:${seconds
@@ -115,9 +185,13 @@ function formatPaceDifference(
 }
 
 function formatHeartRate(
-  value: number,
+  value: number | null,
 ) {
-  if (!Number.isFinite(value)) {
+  if (
+    value === null ||
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
     return "—";
   }
 
@@ -125,9 +199,19 @@ function formatHeartRate(
 }
 
 function formatElevation(
-  meters: number,
+  meters: number | null,
 ) {
-  return Math.round(meters).toString();
+  if (
+    meters === null ||
+    !Number.isFinite(meters) ||
+    meters <= 0
+  ) {
+    return "—";
+  }
+
+  return Math.round(
+    meters,
+  ).toString();
 }
 
 function formatDate(
@@ -145,19 +229,53 @@ function formatDate(
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Activity fetching                                                          */
+/* -------------------------------------------------------------------------- */
+
 async function getRelevantActivities() {
   const now = new Date();
 
-  const currentWeekStart =
-    getStartOfWeek(now);
+  const todayStart =
+    getStartOfDay(now);
 
-  const previousWeekStart =
-    new Date(currentWeekStart);
+  /*
+   * Current metric window:
+   *
+   * Last 28 days including today.
+   */
+  const currentWindowStart =
+    getDaysAgo(
+      todayStart,
+      METRIC_WINDOW_DAYS - 1,
+    );
 
-  previousWeekStart.setDate(
-    previousWeekStart.getDate() - 7,
+  /*
+   * End of current window:
+   * tomorrow at midnight.
+   */
+  const currentWindowEnd =
+    new Date(todayStart);
+
+  currentWindowEnd.setDate(
+    currentWindowEnd.getDate() + 1,
   );
 
+  /*
+   * Previous 28-day comparison window.
+   */
+  const previousWindowEnd =
+    currentWindowStart;
+
+  const previousWindowStart =
+    getDaysAgo(
+      todayStart,
+      METRIC_WINDOW_DAYS * 2 - 1,
+    );
+
+  /*
+   * Year start is used only for Longest Run.
+   */
   const yearStart =
     getStartOfYear(now);
 
@@ -184,13 +302,12 @@ async function getRelevantActivities() {
     );
 
     /*
-     * Strava returns activities
-     * newest first.
+     * Strava returns activities newest first.
      *
-     * Once we reach activities
-     * older than the beginning
-     * of this year, there is no
-     * reason to fetch more pages.
+     * Once the oldest activity on the page
+     * is older than the beginning of the
+     * previous comparison window, we do
+     * not need additional pages.
      */
     const oldestActivity =
       pageActivities[
@@ -198,12 +315,22 @@ async function getRelevantActivities() {
       ];
 
     if (
-      oldestActivity &&
-      new Date(
-        oldestActivity.start_date_local,
-      ) < yearStart
+      oldestActivity
     ) {
-      break;
+      const oldestDate =
+        new Date(
+          oldestActivity.start_date_local,
+        );
+
+      if (
+        Number.isFinite(
+          oldestDate.getTime(),
+        ) &&
+        oldestDate <
+          previousWindowStart
+      ) {
+        break;
+      }
     }
 
     if (
@@ -217,11 +344,17 @@ async function getRelevantActivities() {
 
   return {
     activities,
-    currentWeekStart,
-    previousWeekStart,
+    currentWindowStart,
+    currentWindowEnd,
+    previousWindowStart,
+    previousWindowEnd,
     yearStart,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Date filter                                                                */
+/* -------------------------------------------------------------------------- */
 
 function isBetween(
   date: Date,
@@ -233,6 +366,10 @@ function isBetween(
     date < end
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export async function MetricGrid() {
   let currentRuns: StravaActivity[] =
@@ -247,25 +384,17 @@ export async function MetricGrid() {
   try {
     const {
       activities,
-      currentWeekStart,
-      previousWeekStart,
+      currentWindowStart,
+      currentWindowEnd,
+      previousWindowStart,
+      previousWindowEnd,
       yearStart,
     } =
       await getRelevantActivities();
 
-    const currentWeekEnd =
-      new Date(
-        currentWeekStart,
-      );
-
-    currentWeekEnd.setDate(
-      currentWeekEnd.getDate() + 7,
-    );
-
-    const previousWeekEnd =
-      new Date(
-        currentWeekStart,
-      );
+    /* ---------------------------------------------------------------------- */
+    /* Current 4 weeks                                                        */
+    /* ---------------------------------------------------------------------- */
 
     currentRuns =
       activities.filter(
@@ -278,17 +407,30 @@ export async function MetricGrid() {
             return false;
           }
 
-          const date = new Date(
-            activity.start_date_local,
-          );
+          const date =
+            new Date(
+              activity.start_date_local,
+            );
+
+          if (
+            !Number.isFinite(
+              date.getTime(),
+            )
+          ) {
+            return false;
+          }
 
           return isBetween(
             date,
-            currentWeekStart,
-            currentWeekEnd,
+            currentWindowStart,
+            currentWindowEnd,
           );
         },
       );
+
+    /* ---------------------------------------------------------------------- */
+    /* Previous 4 weeks                                                       */
+    /* ---------------------------------------------------------------------- */
 
     previousRuns =
       activities.filter(
@@ -301,17 +443,30 @@ export async function MetricGrid() {
             return false;
           }
 
-          const date = new Date(
-            activity.start_date_local,
-          );
+          const date =
+            new Date(
+              activity.start_date_local,
+            );
+
+          if (
+            !Number.isFinite(
+              date.getTime(),
+            )
+          ) {
+            return false;
+          }
 
           return isBetween(
             date,
-            previousWeekStart,
-            previousWeekEnd,
+            previousWindowStart,
+            previousWindowEnd,
           );
         },
       );
+
+    /* ---------------------------------------------------------------------- */
+    /* Year-to-date runs                                                      */
+    /* ---------------------------------------------------------------------- */
 
     yearRuns =
       activities.filter(
@@ -324,9 +479,18 @@ export async function MetricGrid() {
             return false;
           }
 
-          const date = new Date(
-            activity.start_date_local,
-          );
+          const date =
+            new Date(
+              activity.start_date_local,
+            );
+
+          if (
+            !Number.isFinite(
+              date.getTime(),
+            )
+          ) {
+            return false;
+          }
 
           return date >= yearStart;
         },
@@ -338,69 +502,142 @@ export async function MetricGrid() {
     );
   }
 
-  /*
-   * ------------------------------------------------
-   * CURRENT WEEK
-   * ------------------------------------------------
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Current window totals                                                    */
+  /* ------------------------------------------------------------------------ */
 
+  /*
+   * Only activities with valid distance
+   * and moving time contribute to pace.
+   */
+  const paceRuns =
+    currentRuns.filter(
+      (run) =>
+        Number.isFinite(
+          run.distance,
+        ) &&
+        run.distance > 0 &&
+        Number.isFinite(
+          run.moving_time,
+        ) &&
+        run.moving_time > 0,
+    );
+
+  /*
+   * Total distance for weighted pace.
+   */
   const currentDistance =
-    currentRuns.reduce(
+    paceRuns.reduce(
       (total, run) =>
         total + run.distance,
       0,
     );
 
+  /*
+   * Total moving time for weighted pace.
+   */
   const currentMovingTime =
-    currentRuns.reduce(
+    paceRuns.reduce(
       (total, run) =>
         total + run.moving_time,
       0,
     );
 
+  /*
+   * Total elevation.
+   *
+   * Elevation is calculated independently
+   * from pace and heart rate.
+   */
   const currentElevation =
     currentRuns.reduce(
-      (total, run) =>
-        total +
-        (run.total_elevation_gain ?? 0),
+      (total, run) => {
+        const elevation =
+          run.total_elevation_gain;
+
+        if (
+          !Number.isFinite(
+            elevation,
+          ) ||
+          elevation <= 0
+        ) {
+          return total;
+        }
+
+        return (
+          total + elevation
+        );
+      },
       0,
     );
 
-  /*
-   * ------------------------------------------------
-   * PREVIOUS WEEK
-   * ------------------------------------------------
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Previous window totals                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  const previousPaceRuns =
+    previousRuns.filter(
+      (run) =>
+        Number.isFinite(
+          run.distance,
+        ) &&
+        run.distance > 0 &&
+        Number.isFinite(
+          run.moving_time,
+        ) &&
+        run.moving_time > 0,
+    );
 
   const previousDistance =
-    previousRuns.reduce(
+    previousPaceRuns.reduce(
       (total, run) =>
         total + run.distance,
       0,
     );
 
   const previousMovingTime =
-    previousRuns.reduce(
+    previousPaceRuns.reduce(
       (total, run) =>
         total + run.moving_time,
       0,
     );
 
+  const previousElevation =
+    previousRuns.reduce(
+      (total, run) => {
+        const elevation =
+          run.total_elevation_gain;
+
+        if (
+          !Number.isFinite(
+            elevation,
+          ) ||
+          elevation <= 0
+        ) {
+          return total;
+        }
+
+        return (
+          total + elevation
+        );
+      },
+      0,
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /* Average Pace                                                             */
+  /* ------------------------------------------------------------------------ */
+
   /*
-   * ------------------------------------------------
-   * AVG PACE
-   *
-   * Weighted:
+   * Correct weighted calculation:
    *
    * total moving time
    * -----------------
    * total distance
    *
-   * This is better than averaging
-   * the pace of individual runs.
-   * ------------------------------------------------
+   * This prevents a short run and a long run
+   * from receiving equal weight.
    */
-
   const currentPaceSeconds =
     paceInSeconds(
       currentMovingTime,
@@ -425,19 +662,28 @@ export async function MetricGrid() {
       previousPaceSeconds,
     );
 
-  /*
-   * ------------------------------------------------
-   * AVG HEART RATE
-   *
-   * Weighted by moving time.
-   * ------------------------------------------------
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Average Heart Rate                                                       */
+  /* ------------------------------------------------------------------------ */
 
+  /*
+   * Only runs that actually have HR data
+   * are included.
+   *
+   * HR is weighted by moving time.
+   */
   const runsWithHeartRate =
     currentRuns.filter(
       (run) =>
-        run.average_heartrate !=
-          null &&
+        Number.isFinite(
+          run.average_heartrate,
+        ) &&
+        Number(
+          run.average_heartrate,
+        ) > 0 &&
+        Number.isFinite(
+          run.moving_time,
+        ) &&
         run.moving_time > 0,
     );
 
@@ -452,7 +698,9 @@ export async function MetricGrid() {
     runsWithHeartRate.reduce(
       (total, run) =>
         total +
-        (run.average_heartrate ?? 0) *
+        Number(
+          run.average_heartrate,
+        ) *
           run.moving_time,
       0,
     );
@@ -461,13 +709,23 @@ export async function MetricGrid() {
     totalHeartRateTime > 0
       ? weightedHeartRate /
         totalHeartRateTime
-      : 0;
+      : null;
 
+  /*
+   * Previous period HR.
+   */
   const previousRunsWithHeartRate =
     previousRuns.filter(
       (run) =>
-        run.average_heartrate !=
-          null &&
+        Number.isFinite(
+          run.average_heartrate,
+        ) &&
+        Number(
+          run.average_heartrate,
+        ) > 0 &&
+        Number.isFinite(
+          run.moving_time,
+        ) &&
         run.moving_time > 0,
     );
 
@@ -482,7 +740,9 @@ export async function MetricGrid() {
     previousRunsWithHeartRate.reduce(
       (total, run) =>
         total +
-        (run.average_heartrate ?? 0) *
+        Number(
+          run.average_heartrate,
+        ) *
           run.moving_time,
       0,
     );
@@ -491,48 +751,47 @@ export async function MetricGrid() {
     previousHeartRateTime > 0
       ? previousWeightedHeartRate /
         previousHeartRateTime
-      : 0;
+      : null;
 
   const heartRateDifference =
-    currentHeartRate > 0 &&
-    previousHeartRate > 0
+    currentHeartRate !== null &&
+    previousHeartRate !== null
       ? Math.round(
           currentHeartRate -
             previousHeartRate,
         )
-      : 0;
+      : null;
 
-  /*
-   * ------------------------------------------------
-   * ELEVATION CHANGE
-   * ------------------------------------------------
-   */
-
-  const previousElevation =
-    previousRuns.reduce(
-      (total, run) =>
-        total +
-        (run.total_elevation_gain ?? 0),
-      0,
-    );
+  /* ------------------------------------------------------------------------ */
+  /* Elevation difference                                                     */
+  /* ------------------------------------------------------------------------ */
 
   const elevationDifference =
-    Math.round(
-      currentElevation -
-        previousElevation,
-    );
+    previousRuns.length > 0
+      ? Math.round(
+          currentElevation -
+            previousElevation,
+        )
+      : null;
 
-  /*
-   * ------------------------------------------------
-   * LONGEST RUN THIS YEAR
-   * ------------------------------------------------
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Longest Run                                                              */
+  /* ------------------------------------------------------------------------ */
 
   const longestRun =
     yearRuns.reduce<
       StravaActivity | null
     >(
       (longest, run) => {
+        if (
+          !Number.isFinite(
+            run.distance,
+          ) ||
+          run.distance <= 0
+        ) {
+          return longest;
+        }
+
         if (
           !longest ||
           run.distance >
@@ -549,104 +808,166 @@ export async function MetricGrid() {
   const longestDistance =
     longestRun
       ? longestRun.distance / 1000
-      : 0;
+      : null;
 
   const longestRunDate =
     longestRun
       ? formatDate(
           longestRun.start_date_local,
         )
-      : "No runs";
+      : undefined;
 
-  /*
-   * ------------------------------------------------
-   * RENDER
-   * ------------------------------------------------
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                   */
+  /* ------------------------------------------------------------------------ */
 
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <MetricCard
-        label="Avg Pace"
-        value={currentPace}
-        unit="/km"
-        change={paceChange}
-        changeLabel="vs last week"
-        positive={
-          currentPaceSeconds > 0 &&
-          previousPaceSeconds > 0
-            ? currentPaceSeconds <
-              previousPaceSeconds
-            : true
-        }
-      />
+    <section>
+      {/* ------------------------------------------------------------------ */}
+      {/* Metric window explanation                                           */}
+      {/* ------------------------------------------------------------------ */}
 
-      <MetricCard
-        label="Avg Heart Rate"
-        value={formatHeartRate(
-          currentHeartRate,
-        )}
-        unit="bpm"
-        change={
-          previousHeartRate > 0
-            ? `${
-                heartRateDifference > 0
-                  ? "+"
-                  : ""
-              }${heartRateDifference} bpm`
-            : undefined
-        }
-        changeLabel={
-          previousHeartRate > 0
-            ? "vs last week"
-            : undefined
-        }
-        positive={
-          heartRateDifference <= 0
-        }
-      />
+      <p
+        className="
+          mb-2
+          px-1
+          text-[10px]
+          leading-5
+          text-muted-foreground
+          sm:text-xs
+        "
+      >
+        Based on your running activities
+        from the last 4 weeks.
+      </p>
 
-      <MetricCard
-        label="Elevation"
-        value={formatElevation(
-          currentElevation,
-        )}
-        unit="m"
-        change={
-          previousRuns.length > 0
-            ? `${
-                elevationDifference > 0
-                  ? "+"
-                  : ""
-              }${elevationDifference} m`
-            : undefined
-        }
-        changeLabel={
-          previousRuns.length > 0
-            ? "vs last week"
-            : undefined
-        }
-        positive={
-          elevationDifference >= 0
-        }
-      />
+      {/* ------------------------------------------------------------------ */}
+      {/* Metrics                                                             */}
+      {/* ------------------------------------------------------------------ */}
 
-      <MetricCard
-        label="Longest Run"
-        value={
-          longestRun
-            ? longestDistance.toFixed(2)
-            : "0.00"
-        }
-        unit="km"
-        change={
-          longestRun
-            ? longestRunDate
-            : undefined
-        }
-        changeLabel=""
-        positive
-      />
-    </div>
+      <div
+        className="
+          grid
+          grid-cols-1
+          gap-3
+          sm:grid-cols-2
+        "
+      >
+        {/* Avg Pace */}
+
+        <MetricCard
+          label="Avg Pace"
+          value={currentPace}
+          unit="/km"
+          change={
+            paceChange
+          }
+          changeLabel={
+            paceChange
+              ? "vs previous 4 weeks"
+              : undefined
+          }
+          positive={
+            currentPaceSeconds > 0 &&
+            previousPaceSeconds > 0
+              ? currentPaceSeconds <
+                previousPaceSeconds
+              : true
+          }
+        />
+
+        {/* Avg Heart Rate */}
+
+        <MetricCard
+          label="Avg Heart Rate"
+          value={formatHeartRate(
+            currentHeartRate,
+          )}
+          unit="bpm"
+          change={
+            heartRateDifference !==
+            null
+              ? `${
+                  heartRateDifference >
+                  0
+                    ? "+"
+                    : ""
+                }${heartRateDifference} bpm`
+              : undefined
+          }
+          changeLabel={
+            heartRateDifference !==
+            null
+              ? "vs previous 4 weeks"
+              : undefined
+          }
+          positive={
+            heartRateDifference ===
+            null
+              ? true
+              : heartRateDifference <=
+                0
+          }
+        />
+
+        {/* Total Elevation */}
+
+        <MetricCard
+          label="Total Elevation"
+          value={formatElevation(
+            currentElevation,
+          )}
+          unit="m"
+          change={
+            elevationDifference !==
+            null
+              ? `${
+                  elevationDifference >
+                  0
+                    ? "+"
+                    : ""
+                }${elevationDifference} m`
+              : undefined
+          }
+          changeLabel={
+            elevationDifference !==
+            null
+              ? "vs previous 4 weeks"
+              : undefined
+          }
+          positive={
+            elevationDifference ===
+            null
+              ? true
+              : elevationDifference >=
+                0
+          }
+        />
+
+        {/* Longest Run */}
+
+        <MetricCard
+          label="Longest Run"
+          value={
+            longestDistance !==
+            null
+              ? longestDistance.toFixed(
+                  2,
+                )
+              : "—"
+          }
+          unit="km"
+          change={
+            longestRunDate
+          }
+          changeLabel={
+            longestRunDate
+              ? ""
+              : undefined
+          }
+          positive
+        />
+      </div>
+    </section>
   );
 }

@@ -1,5 +1,5 @@
-import { AppShell } from "@/components/layout/app-shell";
 
+import { AppShell } from "@/components/layout/app-shell";
 import { ActivityCalendar } from "@/components/calendar/activity-calendar";
 
 import {
@@ -7,88 +7,70 @@ import {
   type CalendarDayData,
 } from "@/lib/strava/calendar";
 
-export const dynamic =
-  "force-dynamic";
+
 
 type CalendarPageProps = {
   searchParams: Promise<{
     year?: string;
-
     month?: string;
   }>;
 };
 
+
+
 export default async function CalendarPage({
   searchParams,
 }: CalendarPageProps) {
-  const params =
-    await searchParams;
+  const params = await searchParams;
 
   const now = new Date();
 
-  /* ------------------------------------------------------------------------ */
-  /* Read year from URL                                                       */
-  /* ------------------------------------------------------------------------ */
 
-  const parsedYear =
-    Number.parseInt(
-      params.year ?? "",
-      10,
-    );
+
+  const parsedYear = Number.parseInt(
+    params.year ?? "",
+    10,
+  );
 
   const year =
-    Number.isFinite(
-      parsedYear,
-    ) &&
+    Number.isFinite(parsedYear) &&
     parsedYear >= 2000 &&
     parsedYear <= 2100
       ? parsedYear
       : now.getFullYear();
 
-  /* ------------------------------------------------------------------------ */
-  /* Read month from URL                                                      */
-  /* ------------------------------------------------------------------------ */
 
-  const parsedMonth =
-    Number.parseInt(
-      params.month ?? "",
-      10,
-    );
+
+  const parsedMonth = Number.parseInt(
+    params.month ?? "",
+    10,
+  );
 
   const month =
-    Number.isFinite(
-      parsedMonth,
-    ) &&
+    Number.isFinite(parsedMonth) &&
     parsedMonth >= 0 &&
     parsedMonth <= 11
       ? parsedMonth
       : now.getMonth();
 
-  /* ------------------------------------------------------------------------ */
-  /* Fetch Strava calendar data                                               */
-  /* ------------------------------------------------------------------------ */
 
-  let days: CalendarDayData[] =
-    [];
+  let days: CalendarDayData[] = [];
 
   try {
-    days =
-      await getCalendarMonth(
-        year,
-        month,
-      );
+    days = await getCalendarMonth(
+      year,
+      month,
+    );
   } catch (error) {
     console.error(
-      "Failed to load Strava calendar:",
+      "Failed to load calendar activities:",
       error,
     );
 
     days = [];
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Render                                                                   */
-  /* ------------------------------------------------------------------------ */
+
 
   return (
     <AppShell>
@@ -105,11 +87,54 @@ export default async function CalendarPage({
           lg:py-8
         "
       >
-        <ActivityCalendar
-          year={year}
-          month={month}
-          days={days}
-        />
+
+
+        {/* Page Headers */}
+
+        <section>
+          <p
+            className="
+              text-xs
+              font-medium
+              text-muted-foreground
+            "
+          >
+            Training schedule
+          </p>
+
+          <h1
+            className="
+              mt-1
+              text-2xl
+              font-bold
+              tracking-tight
+              sm:text-3xl
+            "
+          >
+            Calendar
+          </h1>
+
+          <p
+            className="
+              mt-2
+              text-sm
+              text-muted-foreground
+            "
+          >
+            View your running activities and training history.
+          </p>
+        </section>
+
+
+        <section
+          className="mt-6"
+        >
+          <ActivityCalendar
+            year={year}
+            month={month}
+            days={days}
+          />
+        </section>
       </main>
     </AppShell>
   );

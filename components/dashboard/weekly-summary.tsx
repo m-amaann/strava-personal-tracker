@@ -152,15 +152,11 @@ export async function WeeklySummary() {
   const activities: StravaActivity[] = [];
 
   try {
-    const currentWeekStart =
-      getStartOfWeek(new Date());
+    const currentWeekStart = getStartOfWeek(new Date());
 
-    const previousWeekStart =
-      new Date(currentWeekStart);
+    const previousWeekStart = new Date(currentWeekStart);
 
-    previousWeekStart.setDate(
-      previousWeekStart.getDate() - 7,
-    );
+    previousWeekStart.setDate(previousWeekStart.getDate() - 7);
 
     let page = 1;
 

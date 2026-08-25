@@ -35,7 +35,11 @@ function HeartRateTooltip({
     return null;
   }
 
-  const data = payload[0].payload;
+  const data = payload[0]?.payload;
+
+  if (!data) {
+    return null;
+  }
 
   return (
     <div className="rounded-xl border bg-background px-3 py-2 shadow-lg">
@@ -53,10 +57,16 @@ function HeartRateTooltip({
 export function HeartRateChart({
   data = [],
 }: HeartRateChartProps) {
-  const hasData = data.length > 0;
+  const validData = data.filter(
+    (item) =>
+      Number.isFinite(item.heartRate) &&
+      item.heartRate > 0,
+  );
+
+  const hasData = validData.length > 0;
 
   const latestAverage = hasData
-    ? data[data.length - 1].heartRate
+    ? validData[validData.length - 1]?.heartRate ?? null
     : null;
 
   return (
@@ -72,20 +82,20 @@ export function HeartRateChart({
       </div>
 
       {!hasData ? (
-        <div className="flex h-57.5 items-center justify-center">
+        <div className="flex h-70 items-center justify-center">
           <p className="text-sm text-muted-foreground">
             No heart-rate data available.
           </p>
         </div>
       ) : (
         <>
-          <div className="mt-5 h-57.5 w-full min-w-0">
+          <div className="mt-5 h-70 w-full min-w-0">
             <ResponsiveContainer
               width="100%"
               height="100%"
             >
               <LineChart
-                data={data}
+                data={validData}
                 margin={{
                   top: 8,
                   right: 4,
@@ -128,7 +138,7 @@ export function HeartRateChart({
                     opacity: 0.5,
                   }}
                   tickFormatter={(value) =>
-                    `${value}`
+                    String(value)
                   }
                 />
 
@@ -163,7 +173,7 @@ export function HeartRateChart({
 
             <p className="text-sm font-semibold">
               {latestAverage !== null
-                ? `${latestAverage} bpm`
+                ? `${Math.round(latestAverage)} bpm`
                 : "—"}
             </p>
           </div>
