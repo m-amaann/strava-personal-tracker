@@ -48,7 +48,7 @@ function HeartRateTooltip({
       </p>
 
       <p className="mt-1 text-sm font-bold">
-        {data.heartRate} bpm
+        {Math.round(data.heartRate)} bpm
       </p>
     </div>
   );
@@ -70,8 +70,19 @@ export function HeartRateChart({
     : null;
 
   return (
-    <Card className="p-4 shadow-none sm:p-5">
-      <div>
+    <Card
+      className="
+        flex
+        h-full
+        min-h-0
+        flex-col
+        p-4
+        shadow-none
+        sm:p-5
+      "
+    >
+      {/* Header */}
+      <div className="shrink-0">
         <h2 className="text-base font-semibold tracking-tight">
           Heart Rate
         </h2>
@@ -82,14 +93,15 @@ export function HeartRateChart({
       </div>
 
       {!hasData ? (
-        <div className="flex h-70 items-center justify-center">
+        <div className="flex min-h-70 flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">
             No heart-rate data available.
           </p>
         </div>
       ) : (
         <>
-          <div className="mt-5 h-70 w-full min-w-0">
+          {/* Chart */}
+          <div className="mt-5 min-h-0 flex-1 w-full">
             <ResponsiveContainer
               width="100%"
               height="100%"
@@ -166,7 +178,8 @@ export function HeartRateChart({
             </ResponsiveContainer>
           </div>
 
-          <div className="mt-3 flex items-center justify-between border-t pt-3">
+          {/* Footer */}
+          <div className="mt-3 flex shrink-0 items-center justify-between border-t pt-3">
             <p className="text-xs text-muted-foreground">
               Latest average
             </p>

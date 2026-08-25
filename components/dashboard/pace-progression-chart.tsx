@@ -27,6 +27,7 @@ function formatPace(value: number) {
   }
 
   const minutes = Math.floor(value);
+
   const seconds = Math.round(
     (value - minutes) * 60,
   );
@@ -54,7 +55,11 @@ function PaceTooltip({
     return null;
   }
 
-  const data = payload[0].payload;
+  const data = payload[0]?.payload;
+
+  if (!data) {
+    return null;
+  }
 
   return (
     <div className="rounded-xl border bg-background px-3 py-2 shadow-lg">
@@ -72,14 +77,21 @@ function PaceTooltip({
 export function PaceProgressionChart({
   data = [],
 }: PaceProgressionChartProps) {
-  const hasData = data.length > 0;
+  const validData = data.filter(
+    (item) =>
+      Number.isFinite(item.pace) &&
+      item.pace > 0,
+  );
+
+  const hasData = validData.length > 0;
 
   const latestPace = hasData
-    ? data[data.length - 1].pace
+    ? validData[validData.length - 1]?.pace ?? null
     : null;
 
   return (
     <Card className="p-4 shadow-none sm:p-5">
+      {/* Header */}
       <div>
         <h2 className="text-base font-semibold tracking-tight">
           Pace Progression
@@ -98,13 +110,14 @@ export function PaceProgressionChart({
         </div>
       ) : (
         <>
+          {/* Chart */}
           <div className="mt-5 h-57.5 w-full min-w-0">
             <ResponsiveContainer
               width="100%"
               height="100%"
             >
               <LineChart
-                data={data}
+                data={validData}
                 margin={{
                   top: 8,
                   right: 4,
@@ -163,17 +176,24 @@ export function PaceProgressionChart({
                   dataKey="pace"
                   stroke="var(--chart-2)"
                   strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{
-                    r: 5,
+                  dot={{
+                    r: 4,
                     strokeWidth: 2,
                     fill: "var(--background)",
+                    stroke: "var(--chart-2)",
+                  }}
+                  activeDot={{
+                    r: 6,
+                    strokeWidth: 2,
+                    fill: "var(--background)",
+                    stroke: "var(--chart-2)",
                   }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
+          {/* Footer */}
           <div className="mt-3 flex items-center justify-between border-t pt-3">
             <p className="text-xs text-muted-foreground">
               Latest pace

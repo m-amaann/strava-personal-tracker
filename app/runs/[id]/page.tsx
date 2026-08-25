@@ -11,6 +11,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { RunMap } from "@/components/runs/run-map";
 import { RunStats } from "@/components/runs/run-stats";
 import { RunChartTabs } from "@/components/runs/run-chart-tabs";
+import { RunWorkoutAnalysis } from "@/components/runs/run-workout-analysis";
+import { RunSplits } from "@/components/runs/run-splits";
 
 import {
   getActivity,
@@ -24,24 +26,22 @@ interface RunDetailsPageProps {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    },
-  );
+  return new Date(
+    value,
+  ).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString(
-    "en-US",
-    {
-      hour: "numeric",
-      minute: "2-digit",
-    },
-  );
+  return new Date(
+    value,
+  ).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export default async function RunDetailsPage({
@@ -55,7 +55,8 @@ export default async function RunDetailsPage({
   try {
     run = await getActivity(id);
 
-    streams = await getActivityStreams(id);
+    streams =
+      await getActivityStreams(id);
   } catch (error) {
     console.error(
       "Failed to fetch Strava activity:",
@@ -90,10 +91,14 @@ export default async function RunDetailsPage({
   }
 
   const activityDate =
-    formatDate(run.start_date_local);
+    formatDate(
+      run.start_date_local,
+    );
 
   const activityTime =
-    formatTime(run.start_date_local);
+    formatTime(
+      run.start_date_local,
+    );
 
   return (
     <AppShell>
@@ -115,7 +120,8 @@ export default async function RunDetailsPage({
               </h1>
 
               <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-xs">
-                {activityDate} · {activityTime}
+                {activityDate} ·{" "}
+                {activityTime}
               </p>
             </div>
 
@@ -143,24 +149,39 @@ export default async function RunDetailsPage({
           </p>
         </header>
 
-        {/* Real Strava activity statistics */}
+        {/* Statistics */}
         <section>
           <RunStats run={run} />
         </section>
 
-        {/* Real Strava GPS route */}
+        {/* Map */}
         <section className="mt-5 sm:mt-6">
-            <div className="aspect-[2.4/1] w-full">
-              <RunMap
-                polyline={
-                  run.map?.summary_polyline
-                }
-              />
-            </div>
+          <div className="aspect-[2.4/1] w-full">
+            <RunMap
+              polyline={
+                run.map?.summary_polyline
+              }
+            />
+          </div>
         </section>
 
-        {/* Real Strava activity streams */}
-        <section className="mt-5">
+        {/* Workout Analysis + Splits */}
+        <section className="mt-6">
+          <div className="grid items-stretch gap-6 lg:grid-cols-2">
+            {/* LEFT */}
+            <RunWorkoutAnalysis
+              streams={streams}
+            />
+
+            {/* RIGHT */}
+            <RunSplits
+              streams={streams}
+            />
+          </div>
+        </section>
+
+        {/* Detailed Charts */}
+        <section className="mt-6">
           <RunChartTabs
             streams={streams}
           />

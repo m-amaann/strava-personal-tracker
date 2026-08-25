@@ -139,10 +139,10 @@ function createHeartRateZones(
       zone: 1,
       label: "Zone 1",
       min: Math.round(
-        maxHeartRate * 0.50,
+        maxHeartRate * 0.5,
       ),
       max: Math.round(
-        maxHeartRate * 0.60,
+        maxHeartRate * 0.6,
       ),
       seconds: 0,
       percentage: 0,
@@ -152,10 +152,10 @@ function createHeartRateZones(
       zone: 2,
       label: "Zone 2",
       min: Math.round(
-        maxHeartRate * 0.60,
+        maxHeartRate * 0.6,
       ),
       max: Math.round(
-        maxHeartRate * 0.70,
+        maxHeartRate * 0.7,
       ),
       seconds: 0,
       percentage: 0,
@@ -165,10 +165,10 @@ function createHeartRateZones(
       zone: 3,
       label: "Zone 3",
       min: Math.round(
-        maxHeartRate * 0.70,
+        maxHeartRate * 0.7,
       ),
       max: Math.round(
-        maxHeartRate * 0.80,
+        maxHeartRate * 0.8,
       ),
       seconds: 0,
       percentage: 0,
@@ -178,10 +178,10 @@ function createHeartRateZones(
       zone: 4,
       label: "Zone 4",
       min: Math.round(
-        maxHeartRate * 0.80,
+        maxHeartRate * 0.8,
       ),
       max: Math.round(
-        maxHeartRate * 0.90,
+        maxHeartRate * 0.9,
       ),
       seconds: 0,
       percentage: 0,
@@ -191,7 +191,7 @@ function createHeartRateZones(
       zone: 5,
       label: "Zone 5",
       min: Math.round(
-        maxHeartRate * 0.90,
+        maxHeartRate * 0.9,
       ),
       max: Math.round(
         maxHeartRate,
@@ -213,19 +213,19 @@ function getHeartRateZone(
   const percentage =
     heartRate / maxHeartRate;
 
-  if (percentage < 0.60) {
+  if (percentage < 0.6) {
     return 1;
   }
 
-  if (percentage < 0.70) {
+  if (percentage < 0.7) {
     return 2;
   }
 
-  if (percentage < 0.80) {
+  if (percentage < 0.8) {
     return 3;
   }
 
-  if (percentage < 0.90) {
+  if (percentage < 0.9) {
     return 4;
   }
 
@@ -247,7 +247,9 @@ function calculateHeartRateZoneTime(
 
   let totalSeconds = 0;
 
-  for (const streams of streamsList) {
+  for (
+    const streams of streamsList
+  ) {
     const times =
       getNumericStream(
         streams,
@@ -341,9 +343,11 @@ function calculateHeartRateZoneTime(
         continue;
       }
 
-      zone.seconds += delta;
+      zone.seconds +=
+        delta;
 
-      totalSeconds += delta;
+      totalSeconds +=
+        delta;
     }
   }
 
@@ -353,7 +357,9 @@ function calculateHeartRateZoneTime(
    */
 
   if (totalSeconds > 0) {
-    for (const zone of zones) {
+    for (
+      const zone of zones
+    ) {
       zone.percentage =
         (zone.seconds /
           totalSeconds) *
@@ -375,7 +381,8 @@ export default async function Home() {
   let runs: StravaActivity[] = [];
 
   try {
-    runs = await getAllRuns();
+    runs =
+      await getAllRuns();
   } catch (error) {
     console.error(
       "Failed to fetch dashboard runs:",
@@ -480,7 +487,9 @@ export default async function Home() {
   const heartRateStreams: StravaActivityStreams[] =
     [];
 
-  for (const run of streamRuns) {
+  for (
+    const run of streamRuns
+  ) {
     try {
       const streams =
         await getActivityStreams(
@@ -526,16 +535,21 @@ export default async function Home() {
 
   let maxHeartRate = 0;
 
-  for (const streams of heartRateStreams) {
+  for (
+    const streams of heartRateStreams
+  ) {
     const heartRates =
       getNumericStream(
         streams,
         "heartrate",
       );
 
-    for (const heartRate of heartRates) {
+    for (
+      const heartRate of heartRates
+    ) {
       if (
-        heartRate > maxHeartRate
+        heartRate >
+        maxHeartRate
       ) {
         maxHeartRate =
           heartRate;
@@ -733,45 +747,43 @@ export default async function Home() {
           <WeeklyDistanceChart />
         </section>
 
-        {/* Pace + Heart Rate */}
+        {/* Pace Progression */}
 
+        <section className="mt-6">
+          <PaceProgressionChart
+            data={
+              paceProgressionData
+            }
+          />
+        </section>
+
+        {/* Heart Rate + Heart Rate Zones */}
         <section
           className="
             mt-6
             grid
             gap-6
             lg:grid-cols-2
+            lg:auto-rows-fr
           "
         >
-          <PaceProgressionChart
-            data={
-              paceProgressionData
-            }
-          />
+          <div className="min-w-0 h-full">
+            <HeartRateChart
+              data={heartRateData}
+            />
+          </div>
 
-          <HeartRateChart
-            data={
-              heartRateData
-            }
-          />
-        </section>
-
-        {/* Heart Rate Zones */}
-
-        <section className="mt-6">
-          <HeartRateZones
-            zones={
-              heartRateZones
-            }
-            averageHeartRate={
-              averageHeartRate
-            }
-            maxHeartRate={
-              maxHeartRate > 0
-                ? maxHeartRate
-                : null
-            }
-          />
+          <div className="min-w-0 h-full">
+            <HeartRateZones
+              zones={heartRateZones}
+              averageHeartRate={averageHeartRate}
+              maxHeartRate={
+                maxHeartRate > 0
+                  ? maxHeartRate
+                  : null
+              }
+            />
+          </div>
         </section>
 
         {/* Recent Runs */}

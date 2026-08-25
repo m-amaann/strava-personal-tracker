@@ -1,22 +1,19 @@
 import { cookies } from "next/headers";
 
-import {
-  STRAVA_AUTH_COOKIE,
-  decryptStravaAuth,
-} from "@/lib/strava/auth";
+import { STRAVA_AUTH_COOKIE, decryptStravaAuth } from "@/lib/strava/auth";
 
 import type {
   StravaActivity,
   StravaActivityStreams,
+  StravaActivityZone,
   StravaAthlete,
   StravaAthleteStats,
+  StravaAthleteZones,
   StravaGear,
 } from "@/lib/strava/types";
 
 /* -------------------------------------------------------------------------- */
 /* Configuration                                                              */
-/* -------------------------------------------------------------------------- */
-
 const STRAVA_API_URL = "https://www.strava.com/api/v3";
 
 /* -------------------------------------------------------------------------- */
@@ -516,7 +513,8 @@ export async function getActivity(
 export async function getActivityStreams(
   activityId: number | string,
 ): Promise<StravaActivityStreams> {
-  const keys = [
+  const keys = 
+  [
     "time",
     "distance",
     "latlng",
@@ -538,14 +536,53 @@ export async function getActivityStreams(
         "true",
     });
 
-  return stravaFetch<
-    StravaActivityStreams
-  >(
+  return stravaFetch<StravaActivityStreams>(
     `/activities/${encodeURIComponent(
       String(activityId),
     )}/streams?${query.toString()}`,
   );
 }
+
+
+/* -------------------------------------------------------------------------- */
+/* Athlete Heart Rate Zones                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Fetch the authenticated athlete's configured
+ * heart-rate and power zones directly from Strava.
+ *
+ * GET /athlete/zones
+ *
+ * This does not calculate zones locally.
+ */
+export async function getAthleteZones(): Promise<StravaAthleteZones> {
+  return stravaFetch<StravaAthleteZones>(
+    "/athlete/zones",
+  );
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Activity Heart Rate Zones                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Fetch Strava's own heart-rate zone distribution
+ * for a specific activity.
+ *
+ * GET /activities/{id}/zones
+ */
+export async function getActivityZones(
+  activityId: number | string,
+): Promise<StravaActivityZone[]> {
+  return stravaFetch<StravaActivityZone[]>(
+    `/activities/${encodeURIComponent(
+      String(activityId),
+    )}/zones`,
+  );
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* Gear                                                                       */
@@ -555,17 +592,9 @@ export async function getActivityStreams(
  * Fetch detailed Strava gear.
  *
  * GET /gear/{id}
- *
- * This is used for:
- *
- * - running shoes
- * - shoe brand
- * - shoe model
- * - accumulated distance
  */
-export async function getGear(
-  gearId: string,
-): Promise<StravaGear> {
+
+export async function getGear(gearId: string): Promise<StravaGear> {
   return stravaFetch<StravaGear>(
     `/gear/${encodeURIComponent(
       gearId,

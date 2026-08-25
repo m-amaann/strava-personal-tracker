@@ -284,15 +284,11 @@ export interface StravaActivity {
 
 export interface StravaStream {
   type: string;
-
   data:
     | number[]
     | Array<[number, number]>;
-
   series_type?: string;
-
   original_size?: number;
-
   resolution?: string;
 }
 
@@ -359,24 +355,63 @@ export interface StravaActivityTotals {
 
 export interface StravaAthleteStats {
   biggest_ride_distance?: number;
-
   biggest_climb_elevation_gain?: number;
-
   recent_ride_totals?: StravaActivityTotals;
-
   recent_run_totals?: StravaActivityTotals;
-
   recent_swim_totals?: StravaActivityTotals;
-
   ytd_ride_totals?: StravaActivityTotals;
-
   ytd_run_totals?: StravaActivityTotals;
-
   ytd_swim_totals?: StravaActivityTotals;
-
   all_ride_totals?: StravaActivityTotals;
-
   all_run_totals?: StravaActivityTotals;
-
   all_swim_totals?: StravaActivityTotals;
+}
+
+
+
+/* -------------------------------------------------------------------------- */
+/* Heart Rate Zones                                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface StravaZoneRange {
+  min: number;
+  max: number;
+}
+
+export interface StravaHeartRateZoneRanges {
+  custom_zones: boolean;
+  zones: StravaZoneRange[];
+}
+
+export interface StravaPowerZoneRanges {
+  custom_zones?: boolean;
+  zones?: StravaZoneRange[];
+}
+
+export interface StravaAthleteZones {
+  heart_rate?: StravaHeartRateZoneRanges;
+  power?: StravaPowerZoneRanges;
+}
+
+
+
+
+/* -------------------------------------------------------------------------- */
+/* Activity Zones                                                             */
+/* -------------------------------------------------------------------------- */
+
+export interface StravaTimedZoneRange {
+  min: number;
+  max: number;
+  time: number;
+}
+
+export interface StravaActivityZone {
+  score?: number;
+  distribution_buckets?: StravaTimedZoneRange[];
+  type: "heartrate" | "power" | string;
+  sensor_based?: boolean;
+  points?: number;
+  custom_zones?: boolean;
+  max?: number;
 }

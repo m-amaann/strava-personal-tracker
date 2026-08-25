@@ -30,7 +30,7 @@ export function RunsHeader({totalRuns}: RunsHeaderProps)
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* <div className="flex items-center gap-2">
         <Button
           variant="outline"
           size="icon"
@@ -48,7 +48,7 @@ export function RunsHeader({totalRuns}: RunsHeaderProps)
         >
           <SlidersHorizontal className="size-4" />
         </Button>
-      </div>
+      </div> */}
     </header>
   );
 }
