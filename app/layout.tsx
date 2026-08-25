@@ -21,9 +21,9 @@ const jakarta =
   });
 
 export const metadata: Metadata = {
-  title: "StrideIQ",
+  title: "EndrivoIQ",
   description:
-    "Personal training performance intelligence powered by Strava",
+    "A personal performance journal for tracking running, cycling, training, and progress through real activity data and performance analytics.",
 };
 
 export default function RootLayout({

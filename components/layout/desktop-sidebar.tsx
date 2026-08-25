@@ -90,7 +90,7 @@ export function DesktopSidebar() {
             items-center
             gap-2.5
           "
-          aria-label="StrideIQ"
+          aria-label="EndrivoIQ"
         >
           <Image
             src="/images/strava-logo.png"
@@ -109,7 +109,7 @@ export function DesktopSidebar() {
               text-foreground
             "
           >
-            StrideIQ
+            EndrivoIQ
           </span>
         </Link>
       </div>

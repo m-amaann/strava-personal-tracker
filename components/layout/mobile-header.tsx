@@ -60,11 +60,11 @@ export function MobileHeader() {
           items-center
           gap-2
         "
-        aria-label="StrideIQ"
+        aria-label="EndrivoIQ"
       >
         <Image
           src="/images/strava-logo.png"
-          alt="StrideIQ"
+          alt="EndrivoIQ"
           width={24}
           height={24}
           priority
@@ -82,7 +82,7 @@ export function MobileHeader() {
             text-foreground
           "
         >
-          StrideIQ
+          EndrivoIQ
         </span>
       </Link>
     </header>
