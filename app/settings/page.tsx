@@ -103,11 +103,10 @@ export default async function SettingsPage() {
 
   let watch: GearItem | null = null;
 
-  const sortedDevices = Array.from(
-    deviceCounts.entries(),
-  ).sort(
-    (a, b) => b[1] - a[1],
-  );
+  const sortedDevices =
+    Array.from(deviceCounts.entries()).sort(
+      (a, b) => b[1] - a[1],
+    );
 
   const primaryDevice =
     sortedDevices[0];
@@ -422,159 +421,101 @@ export default async function SettingsPage() {
                 Connection
               </p>
 
-              {connected ? (
+              <div
+                className="
+                  flex
+                  min-w-0
+                  items-center
+                  gap-3
+                  rounded-2xl
+                  border
+                  border-border/70
+                  bg-card
+                  p-4
+                  sm:gap-4
+                  sm:p-5
+                  md:p-6
+                "
+              >
                 <div
                   className="
                     flex
-                    min-w-0
+                    size-10
+                    shrink-0
                     items-center
-                    gap-3
-                    rounded-2xl
-                    border
-                    border-border/70
-                    bg-card
-                    p-4
-                    sm:gap-4
-                    sm:p-5
-                    md:p-6
+                    justify-center
+                    rounded-xl
+                    bg-emerald-50
+                    text-emerald-600
+                    sm:size-11
                   "
                 >
+                  <Link2 className="size-5" />
+                </div>
+
+                <div className="min-w-0 flex-1">
                   <div
                     className="
                       flex
-                      size-10
-                      shrink-0
+                      min-w-0
+                      flex-wrap
                       items-center
-                      justify-center
-                      rounded-xl
-                      bg-emerald-50
-                      text-emerald-600
-                      sm:size-11
+                      gap-2
                     "
                   >
-                    <Link2 className="size-5" />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className="
-                        flex
-                        min-w-0
-                        flex-wrap
-                        items-center
-                        gap-2
-                      "
-                    >
-                      <p
-                        className="
-                          truncate
-                          text-sm
-                          font-semibold
-                        "
-                      >
-                        Strava Connection
-                      </p>
-
-                      <span
-                        className="
-                          inline-flex
-                          shrink-0
-                          items-center
-                          gap-1
-                          rounded-full
-                          bg-emerald-50
-                          px-2
-                          py-0.5
-                          text-[9px]
-                          font-semibold
-                          text-emerald-600
-                          sm:text-[10px]
-                        "
-                      >
-                        <span
-                          className="
-                            size-1.5
-                            rounded-full
-                            bg-emerald-500
-                          "
-                        />
-
-                        Connected
-                      </span>
-                    </div>
-
                     <p
                       className="
-                        mt-0.5
                         truncate
-                        text-[11px]
-                        text-muted-foreground
-                        sm:text-xs
+                        text-sm
+                        font-semibold
                       "
                     >
-                      {athleteName ||
-                        athlete?.username ||
-                        "Strava athlete"}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <a
-                  href="/api/strava/auth/connect"
-                  className="
-                    group
-                    flex
-                    min-w-0
-                    items-center
-                    gap-3
-                    rounded-2xl
-                    border
-                    border-border/70
-                    bg-card
-                    p-4
-                    transition-all
-                    duration-200
-                    sm:gap-4
-                    sm:p-5
-                    hover:border-[#FC4C02]/30
-                    hover:shadow-sm
-                  "
-                >
-                  <div
-                    className="
-                      flex
-                      size-10
-                      shrink-0
-                      items-center
-                      justify-center
-                      rounded-xl
-                      bg-[#FFF1EB]
-                      text-[#FC4C02]
-                      sm:size-11
-                    "
-                  >
-                    <Link2 className="size-5" />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">
                       Strava Connection
                     </p>
 
-                    <p
+                    <span
                       className="
-                        mt-0.5
-                        truncate
-                        text-[11px]
-                        text-muted-foreground
-                        sm:text-xs
+                        inline-flex
+                        shrink-0
+                        items-center
+                        gap-1
+                        rounded-full
+                        bg-emerald-50
+                        px-2
+                        py-0.5
+                        text-[9px]
+                        font-semibold
+                        text-emerald-600
+                        sm:text-[10px]
                       "
                     >
-                      Connect your Strava account
-                    </p>
+                      <span
+                        className="
+                          size-1.5
+                          rounded-full
+                          bg-emerald-500
+                        "
+                      />
+
+                      Connected
+                    </span>
                   </div>
-                </a>
-              )}
+
+                  <p
+                    className="
+                      mt-0.5
+                      truncate
+                      text-[11px]
+                      text-muted-foreground
+                      sm:text-xs
+                    "
+                  >
+                    {athleteName ||
+                      athlete?.username ||
+                      "Strava account"}
+                  </p>
+                </div>
+              </div>
             </section>
 
             {/* Settings */}

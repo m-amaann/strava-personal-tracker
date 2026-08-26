@@ -1,6 +1,11 @@
 import { cookies } from "next/headers";
 
-import { STRAVA_AUTH_COOKIE, decryptStravaAuth } from "@/lib/strava/auth";
+import {
+  STRAVA_AUTH_COOKIE,
+  decryptStravaAuth,
+  refreshStravaAuth,
+  type StravaAuth,
+} from "@/lib/strava/auth";
 
 import type {
   StravaActivity,
@@ -33,6 +38,123 @@ const STRAVA_API_URL = "https://www.strava.com/api/v3";
  * Token refreshing is handled separately by the application's
  * authentication flow.
  */
+let publicStravaAuth: StravaAuth | null = null;
+let publicStravaRefreshPromise: Promise<StravaAuth> | null = null;
+
+async function getPublicStravaAuth(): Promise<StravaAuth> {
+  const refreshToken =
+    process.env.STRAVA_REFRESH_TOKEN;
+
+  if (!refreshToken) {
+    throw new Error(
+      "STRAVA_REFRESH_TOKEN is not configured.",
+    );
+  }
+
+  if (publicStravaAuth) {
+    const now = Math.floor(
+      Date.now() / 1000,
+    );
+
+    if (
+      publicStravaAuth.expiresAt >
+      now + 60 * 60
+    ) {
+      return publicStravaAuth;
+    }
+  }
+
+  if (publicStravaRefreshPromise) {
+    return publicStravaRefreshPromise;
+  }
+
+  publicStravaRefreshPromise = (async () => {
+    try {
+      const baseAuth: StravaAuth =
+        publicStravaAuth ?? {
+          athleteId: 0,
+          firstname: "",
+          lastname: "",
+          accessToken: "",
+          refreshToken,
+          expiresAt: 0,
+          scope:
+            "read,activity:read_all",
+        };
+
+      const refreshed =
+        await refreshStravaAuth(
+          baseAuth,
+        );
+
+      const athleteResponse =
+        await fetch(
+          `${STRAVA_API_URL}/athlete`,
+          {
+            method: "GET",
+            headers: {
+              Authorization:
+                `Bearer ${refreshed.accessToken}`,
+              Accept:
+                "application/json",
+            },
+            cache: "no-store",
+          },
+        );
+
+      const athlete =
+        await athleteResponse
+          .json()
+          .catch(() => null);
+
+      if (!athleteResponse.ok) {
+        console.error(
+          "Failed to fetch public Strava athlete:",
+          {
+            status:
+              athleteResponse.status,
+            data: athlete,
+          },
+        );
+
+        throw new Error(
+          "Unable to load the configured Strava athlete.",
+        );
+      }
+
+      if (
+        typeof athlete?.id !== "number"
+      ) {
+        throw new Error(
+          "Strava returned an invalid athlete.",
+        );
+      }
+
+      publicStravaAuth = {
+        ...refreshed,
+        athleteId: athlete.id,
+        firstname:
+          typeof athlete.firstname ===
+          "string"
+            ? athlete.firstname
+            : "",
+        lastname:
+          typeof athlete.lastname ===
+          "string"
+            ? athlete.lastname
+            : "",
+      };
+
+      return publicStravaAuth;
+    } finally {
+      publicStravaRefreshPromise =
+        null;
+    }
+  })();
+
+  return publicStravaRefreshPromise;
+}
+
 export async function getStravaAuth() {
   const cookieStore =
     await cookies();
@@ -42,20 +164,41 @@ export async function getStravaAuth() {
       STRAVA_AUTH_COOKIE,
     )?.value;
 
-  if (!authCookie) {
-    return null;
+  /*
+   * Prefer a normal browser authentication cookie
+   * when one exists. This keeps the existing OAuth
+   * flow working.
+   */
+  if (authCookie) {
+    const auth =
+      await decryptStravaAuth(
+        authCookie,
+      );
+
+    if (auth) {
+      return auth;
+    }
   }
 
-  const auth =
-    await decryptStravaAuth(
-      authCookie,
+  /*
+   * Public EndrivoIQ mode:
+   *
+   * If a visitor has no Strava cookie, use the
+   * application's STRAVA_REFRESH_TOKEN instead.
+   *
+   * This means visitors do not need to log in to
+   * Strava and no database is required.
+   */
+  try {
+    return await getPublicStravaAuth();
+  } catch (error) {
+    console.error(
+      "Failed to load public Strava authentication:",
+      error,
     );
 
-  if (!auth) {
     return null;
   }
-
-  return auth;
 }
 
 /* -------------------------------------------------------------------------- */

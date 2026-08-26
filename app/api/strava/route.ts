@@ -9,6 +9,7 @@ import {
   STRAVA_AUTH_COOKIE,
   decryptStravaAuth,
   encryptStravaAuth,
+  getPublicStravaAuth,
   isAccessTokenExpired,
   refreshStravaAuth,
 } from "@/lib/strava/auth";
@@ -27,7 +28,7 @@ type Resource =
   | "stats";
 
 /* -------------------------------------------------------------------------- */
-/* Get valid Strava authentication                                             */
+/* Get valid Strava authentication                                            */
 /* -------------------------------------------------------------------------- */
 
 async function getValidAuth() {
@@ -39,91 +40,130 @@ async function getValidAuth() {
       STRAVA_AUTH_COOKIE,
     )?.value;
 
-  if (!token) {
+  /*
+   * ------------------------------------------------------------------------
+   * Existing browser authentication
+   * ------------------------------------------------------------------------
+   *
+   * If the current browser has a Strava
+   * authentication cookie, use it.
+   */
+  if (token) {
+    const auth =
+      await decryptStravaAuth(
+        token,
+      );
+
+    if (auth) {
+      /*
+       * Access token is still valid.
+       */
+      if (
+        !isAccessTokenExpired(
+          auth.expiresAt,
+        )
+      ) {
+        return auth;
+      }
+
+      /*
+       * Access token is expired or has
+       * one hour or less remaining.
+       */
+      try {
+        const refreshed =
+          await refreshStravaAuth(
+            auth,
+          );
+
+        /*
+         * Store the refreshed authentication
+         * in the existing browser cookie.
+         */
+        const encrypted =
+          await encryptStravaAuth(
+            refreshed,
+          );
+
+        cookieStore.set({
+          name:
+            STRAVA_AUTH_COOKIE,
+
+          value:
+            encrypted,
+
+          httpOnly: true,
+
+          secure:
+            process.env.NODE_ENV ===
+            "production",
+
+          sameSite: "lax",
+
+          path: "/",
+
+          /*
+           * Long-lived application cookie.
+           *
+           * This does NOT make the Strava
+           * access token permanent.
+           */
+          maxAge:
+            60 *
+            60 *
+            24 *
+            365 *
+            10,
+        });
+
+        return refreshed;
+      } catch (error) {
+        console.error(
+          "Failed to refresh browser Strava authentication:",
+          error,
+        );
+
+        /*
+         * Don't immediately fail.
+         *
+         * Fall back to the public owner
+         * authentication below.
+         */
+      }
+    }
+  }
+
+  /*
+   * ------------------------------------------------------------------------
+   * Public EndrivoIQ authentication
+   * ------------------------------------------------------------------------
+   *
+   * This is the important part for your
+   * personal public website.
+   *
+   * Visitors don't need their own Strava
+   * cookie or Strava login.
+   *
+   * The server uses:
+   *
+   * STRAVA_REFRESH_TOKEN
+   *
+   * to authenticate YOUR Strava account.
+   */
+  try {
+    return await getPublicStravaAuth();
+  } catch (error) {
+    console.error(
+      "Failed to load public Strava authentication:",
+      error,
+    );
+
     return null;
   }
-
-  const auth =
-    await decryptStravaAuth(
-      token,
-    );
-
-  if (!auth) {
-    return null;
-  }
-
-  /*
-   * Access token is still valid.
-   */
-  if (
-    !isAccessTokenExpired(
-      auth.expiresAt,
-    )
-  ) {
-    return auth;
-  }
-
-  /*
-   * Access token is expired or has
-   * one hour or less remaining.
-   */
-  const refreshed =
-    await refreshStravaAuth(
-      auth,
-    );
-
-  /*
-   * Encrypt the new authentication.
-   */
-  const encrypted =
-    await encryptStravaAuth(
-      refreshed,
-    );
-
-  /*
-   * Route Handler is allowed to
-   * modify cookies.
-   */
-  cookieStore.set({
-    name:
-      STRAVA_AUTH_COOKIE,
-
-    value:
-      encrypted,
-
-    httpOnly: true,
-
-    secure:
-      process.env.NODE_ENV ===
-      "production",
-
-    sameSite:
-      "lax",
-
-    path: "/",
-
-    /*
-     * Long-lived application cookie.
-     *
-     * This does NOT make the Strava
-     * access token permanent.
-     *
-     * The access token is refreshed
-     * automatically above.
-     */
-    maxAge:
-      60 *
-      60 *
-      24 *
-      365 *
-      10,
-  });
-
-  return refreshed;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Strava API fetch                                                            */
+/* Strava API fetch                                                           */
 /* -------------------------------------------------------------------------- */
 
 async function stravaFetch(
@@ -147,6 +187,12 @@ async function stravaFetch(
           ...options?.headers,
         },
 
+        /*
+         * Always request fresh Strava data.
+         *
+         * This is important because your
+         * dashboard is a personal live tracker.
+         */
         cache: "no-store",
       },
     );
@@ -161,22 +207,26 @@ async function stravaFetch(
   if (!response.ok) {
     return {
       ok: false,
+
       status:
         response.status,
+
       data,
     };
   }
 
   return {
     ok: true,
+
     status:
       response.status,
+
     data,
   };
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET /api/strava                                                             */
+/* GET /api/strava                                                            */
 /* -------------------------------------------------------------------------- */
 
 export async function GET(
@@ -184,8 +234,13 @@ export async function GET(
 ) {
   try {
     /*
-     * Automatically refreshes the
-     * Strava token when necessary.
+     * Automatically obtains a valid
+     * authentication.
+     *
+     * Priority:
+     *
+     * 1. Existing browser cookie
+     * 2. Public STRAVA_REFRESH_TOKEN
      */
     const auth =
       await getValidAuth();
