@@ -3,7 +3,6 @@ import {
   Bike,
   CalendarDays,
   ChartNoAxesCombined,
-  Ellipsis,
   Footprints,
   Home,
   Settings,
@@ -17,14 +16,12 @@ export const ROUTES = {
   progress: "/progress",
   records: "/records",
   calendar: "/calendar",
+  settings: "/settings",
   
   // Future activity pages
   cycling: "",
   swimming: "",
   walking: "",
-
-  more: "/more",
-  settings: "/settings",
 } as const;
 
 export const NAVIGATION = [
@@ -58,6 +55,12 @@ export const NAVIGATION = [
     icon: CalendarDays,
     enabled: true,
   },
+  {
+    label: "Settings",
+    href: ROUTES.settings,
+    icon: Settings,
+    enabled: true,
+  },
 
   // Future activities
   {
@@ -77,18 +80,5 @@ export const NAVIGATION = [
     href: ROUTES.walking,
     icon: Footprints,
     enabled: false,
-  },
-
-  {
-    label: "More",
-    href: ROUTES.more,
-    icon: Ellipsis,
-    enabled: true,
-  },
-  {
-    label: "Settings",
-    href: ROUTES.settings,
-    icon: Settings,
-    enabled: true,
   },
 ] as const;

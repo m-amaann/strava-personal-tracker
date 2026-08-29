@@ -1,13 +1,39 @@
+import "server-only";
+
 import { createHash } from "crypto";
+
 import {
   EncryptJWT,
   jwtDecrypt,
   type JWTPayload,
 } from "jose";
 
-export const STRAVA_AUTH_COOKIE = "strava_auth";
+/* ============================================================================
+ * Constants
+ * ========================================================================== */
 
-export interface StravaAuth extends JWTPayload {
+export const STRAVA_AUTH_COOKIE =
+  "strava_auth";
+
+const STRAVA_TOKEN_URL =
+  "https://www.strava.com/oauth/token";
+
+const STRAVA_API_URL =
+  "https://www.strava.com/api/v3";
+
+/*
+ * Strava recommends refreshing when the access token
+ * has one hour or less remaining.
+ */
+const TOKEN_REFRESH_BUFFER_SECONDS =
+  60 * 60;
+
+/* ============================================================================
+ * Types
+ * ========================================================================== */
+
+export interface StravaAuth
+  extends JWTPayload {
   athleteId: number;
   firstname: string;
   lastname: string;
@@ -17,51 +43,75 @@ export interface StravaAuth extends JWTPayload {
   scope: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Environment                                                               */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Environment
+ * ========================================================================== */
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
+function getRequiredEnv(
+  name: string,
+): string {
+  const value =
+    process.env[name]?.trim();
 
   if (!value) {
-    throw new Error(`${name} is not configured.`);
+    throw new Error(
+      `${name} is not configured.`,
+    );
   }
 
   return value;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Encryption                                                                */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Encryption
+ * ========================================================================== */
 
 function getEncryptionKey(): Buffer {
-  const secret = getRequiredEnv(
-    "STRAVA_SESSION_SECRET",
-  );
+  const secret =
+    getRequiredEnv(
+      "STRAVA_SESSION_SECRET",
+    );
 
+  /*
+   * Convert the application secret into
+   * a fixed 32-byte AES-256 key.
+   */
   return createHash("sha256")
     .update(secret)
     .digest();
 }
 
-/* -------------------------------------------------------------------------- */
-/* Encrypt                                                                   */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Encrypt
+ * ========================================================================== */
 
 export async function encryptStravaAuth(
   auth: StravaAuth,
 ): Promise<string> {
-  const key = getEncryptionKey();
+  const key =
+    getEncryptionKey();
 
   return new EncryptJWT({
-    athleteId: auth.athleteId,
-    firstname: auth.firstname,
-    lastname: auth.lastname,
-    accessToken: auth.accessToken,
-    refreshToken: auth.refreshToken,
-    expiresAt: auth.expiresAt,
-    scope: auth.scope,
+    athleteId:
+      auth.athleteId,
+
+    firstname:
+      auth.firstname,
+
+    lastname:
+      auth.lastname,
+
+    accessToken:
+      auth.accessToken,
+
+    refreshToken:
+      auth.refreshToken,
+
+    expiresAt:
+      auth.expiresAt,
+
+    scope:
+      auth.scope,
   })
     .setProtectedHeader({
       alg: "dir",
@@ -71,143 +121,235 @@ export async function encryptStravaAuth(
     .encrypt(key);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Decrypt                                                                   */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Decrypt
+ * ========================================================================== */
 
 export async function decryptStravaAuth(
   token: string,
 ): Promise<StravaAuth | null> {
-  try {
-    const key = getEncryptionKey();
+  if (!token) {
+    return null;
+  }
 
-    const { payload } = await jwtDecrypt(
-      token,
-      key,
-    );
+  try {
+    const key =
+      getEncryptionKey();
+
+    const {
+      payload,
+    } =
+      await jwtDecrypt(
+        token,
+        key,
+      );
 
     if (
-      typeof payload.athleteId !== "number" ||
-      typeof payload.firstname !== "string" ||
-      typeof payload.lastname !== "string" ||
-      typeof payload.accessToken !== "string" ||
-      typeof payload.refreshToken !== "string" ||
-      typeof payload.expiresAt !== "number" ||
-      typeof payload.scope !== "string"
+      typeof payload.athleteId !==
+        "number" ||
+
+      typeof payload.firstname !==
+        "string" ||
+
+      typeof payload.lastname !==
+        "string" ||
+
+      typeof payload.accessToken !==
+        "string" ||
+
+      typeof payload.refreshToken !==
+        "string" ||
+
+      typeof payload.expiresAt !==
+        "number" ||
+
+      typeof payload.scope !==
+        "string"
     ) {
       return null;
     }
 
     return {
-      athleteId: payload.athleteId,
-      firstname: payload.firstname,
-      lastname: payload.lastname,
-      accessToken: payload.accessToken,
-      refreshToken: payload.refreshToken,
-      expiresAt: payload.expiresAt,
-      scope: payload.scope,
-    };
-  } catch (error) {
-    console.error(
-      "Failed to decrypt Strava authentication:",
-      error,
-    );
+      athleteId:
+        payload.athleteId,
 
+      firstname:
+        payload.firstname,
+
+      lastname:
+        payload.lastname,
+
+      accessToken:
+        payload.accessToken,
+
+      refreshToken:
+        payload.refreshToken,
+
+      expiresAt:
+        payload.expiresAt,
+
+      scope:
+        payload.scope,
+    };
+  } catch {
+    /*
+     * Do not expose token/cookie contents.
+     */
     return null;
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Access token expiry                                                       */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Access Token Expiration
+ * ========================================================================== */
 
 export function isAccessTokenExpired(
   expiresAt: number,
 ): boolean {
-  const now = Math.floor(
-    Date.now() / 1000,
-  );
+  if (
+    !Number.isFinite(
+      expiresAt,
+    )
+  ) {
+    return true;
+  }
 
-  /*
-   * Refresh when the token has one hour
-   * or less remaining.
-   */
-  return expiresAt <= now + 60 * 60;
+  const now =
+    Math.floor(
+      Date.now() / 1000,
+    );
+
+  return (
+    expiresAt <=
+    now +
+      TOKEN_REFRESH_BUFFER_SECONDS
+  );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Refresh Access Token                                                      */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Refresh Strava Authentication
+ * ========================================================================== */
 
 export async function refreshStravaAuth(
   auth: StravaAuth,
 ): Promise<StravaAuth> {
-  const clientId = getRequiredEnv(
-    "STRAVA_CLIENT_ID",
-  );
+  const clientId =
+    getRequiredEnv(
+      "STRAVA_CLIENT_ID",
+    );
 
-  const clientSecret = getRequiredEnv(
-    "STRAVA_CLIENT_SECRET",
-  );
+  const clientSecret =
+    getRequiredEnv(
+      "STRAVA_CLIENT_SECRET",
+    );
 
-  const response = await fetch(
-    "https://www.strava.com/oauth/token",
-    {
-      method: "POST",
+  if (
+    !auth.refreshToken
+  ) {
+    throw new Error(
+      "STRAVA_REFRESH_TOKEN_MISSING",
+    );
+  }
 
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded",
-      },
+  let response: Response;
 
-      body: new URLSearchParams({
-        client_id: clientId,
+  try {
+    response =
+      await fetch(
+        STRAVA_TOKEN_URL,
+        {
+          method: "POST",
 
-        client_secret: clientSecret,
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded",
 
-        grant_type: "refresh_token",
+            Accept:
+              "application/json",
+          },
 
-        refresh_token:
-          auth.refreshToken,
-      }),
+          body:
+            new URLSearchParams({
+              client_id:
+                clientId,
 
-      cache: "no-store",
-    },
-  );
+              client_secret:
+                clientSecret,
 
-  const data = await response
-    .json()
-    .catch(() => null);
+              grant_type:
+                "refresh_token",
+
+              refresh_token:
+                auth.refreshToken,
+            }),
+
+          cache: "no-store",
+        },
+      );
+  } catch {
+    throw new Error(
+      "STRAVA_TOKEN_NETWORK_ERROR",
+    );
+  }
+
+  const data =
+    await response
+      .json()
+      .catch(() => null);
 
   if (!response.ok) {
+    /*
+     * Do not print the refresh token.
+     */
     console.error(
-      "Strava refresh failed:",
+      "Strava token refresh rejected:",
       {
-        status: response.status,
-        data,
+        status:
+          response.status,
+
+        message:
+          data?.message ??
+          "Unknown Strava error.",
       },
     );
 
+    if (
+      response.status ===
+      401
+    ) {
+      throw new Error(
+        "STRAVA_REFRESH_TOKEN_INVALID",
+      );
+    }
+
     throw new Error(
-      "Unable to refresh Strava access token.",
+      "STRAVA_REFRESH_FAILED",
     );
   }
 
   if (
-    typeof data?.access_token !== "string" ||
-    typeof data?.refresh_token !== "string" ||
-    typeof data?.expires_at !== "number"
-  ) {
-    console.error(
-      "Invalid Strava refresh response:",
-      data,
-    );
+    typeof data?.access_token !==
+      "string" ||
 
+    typeof data?.refresh_token !==
+      "string" ||
+
+    typeof data?.expires_at !==
+      "number"
+  ) {
     throw new Error(
-      "Strava returned an invalid refresh response.",
+      "STRAVA_INVALID_REFRESH_RESPONSE",
     );
   }
 
+  /*
+   * IMPORTANT:
+   *
+   * Strava may return a new refresh token.
+   *
+   * Always use the refresh token returned by
+   * the latest successful refresh.
+   */
   return {
     ...auth,
 
@@ -219,35 +361,107 @@ export async function refreshStravaAuth(
 
     expiresAt:
       data.expires_at,
+
+    scope:
+      typeof data.scope ===
+      "string"
+        ? data.scope
+        : auth.scope,
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Public-site authentication                                                */
-/* -------------------------------------------------------------------------- */
-
-/*
- * This allows EndrivoIQ to work without a database
- * and without requiring every visitor to connect Strava.
+/* ============================================================================
+ * Public Authentication
  *
- * The refresh token comes from:
+ * This is the authentication used by EndrivoIQ's public dashboard.
+ *
+ * Visitors do NOT need a Strava cookie.
+ *
+ * Required environment variable:
  *
  * STRAVA_REFRESH_TOKEN
- *
- * We create an in-memory authentication object from
- * the refresh token and obtain a fresh Strava access
- * token when necessary.
- */
+ * ========================================================================== */
 
 let publicAuthCache:
-  StravaAuth | null = null;
+  | StravaAuth
+  | null = null;
 
-/*
- * Prevent multiple simultaneous requests from
- * refreshing the token at the same time.
- */
-let publicAuthRefreshPromise:
-  Promise<StravaAuth> | null = null;
+let publicAuthPromise:
+  | Promise<StravaAuth>
+  | null = null;
+
+/* ============================================================================
+ * Get Athlete From Access Token
+ * ========================================================================== */
+
+async function getAthleteFromToken(
+  accessToken: string,
+): Promise<{
+  id: number;
+  firstname?: string;
+  lastname?: string;
+}> {
+  let response: Response;
+
+  try {
+    response =
+      await fetch(
+        `${STRAVA_API_URL}/athlete`,
+        {
+          method: "GET",
+
+          headers: {
+            Authorization:
+              `Bearer ${accessToken}`,
+
+            Accept:
+              "application/json",
+          },
+
+          cache: "no-store",
+        },
+      );
+  } catch {
+    throw new Error(
+      "STRAVA_API_NETWORK_ERROR",
+    );
+  }
+
+  const data =
+    await response
+      .json()
+      .catch(() => null);
+
+  if (!response.ok) {
+    if (
+      response.status ===
+      401
+    ) {
+      throw new Error(
+        "STRAVA_ACCESS_TOKEN_INVALID",
+      );
+    }
+
+    throw new Error(
+      `STRAVA_ATHLETE_${response.status}`,
+    );
+  }
+
+  if (
+    typeof data?.id !==
+    "number"
+  ) {
+    throw new Error(
+      "STRAVA_INVALID_ATHLETE",
+    );
+  }
+
+  return data;
+}
+
+/* ============================================================================
+ * Create Public Authentication
+ * ========================================================================== */
 
 async function createPublicAuth(): Promise<StravaAuth> {
   const refreshToken =
@@ -256,103 +470,76 @@ async function createPublicAuth(): Promise<StravaAuth> {
     );
 
   /*
-   * We do not know the athlete information yet.
-   * Strava will provide it after obtaining the
-   * access token.
+   * We intentionally do NOT use STRAVA_ACCESS_TOKEN.
+   *
+   * Access tokens expire after six hours.
+   *
+   * The refresh token is the long-lived credential.
    */
 
-  const temporaryAuth: StravaAuth = {
+  const temporaryAuth:
+    StravaAuth = {
     athleteId: 0,
+
     firstname: "",
+
     lastname: "",
+
     accessToken: "",
+
     refreshToken,
+
     expiresAt: 0,
+
     scope:
       "read,activity:read_all",
   };
 
+  /*
+   * Get a fresh short-lived access token.
+   */
   const refreshed =
     await refreshStravaAuth(
       temporaryAuth,
     );
 
   /*
-   * Fetch the actual athlete using the
-   * newly obtained access token.
+   * Validate the token and obtain
+   * the actual athlete.
    */
-  const athleteResponse =
-    await fetch(
-      "https://www.strava.com/api/v3/athlete",
-      {
-        headers: {
-          Authorization:
-            `Bearer ${refreshed.accessToken}`,
-
-          Accept:
-            "application/json",
-        },
-
-        cache: "no-store",
-      },
+  const athlete =
+    await getAthleteFromToken(
+      refreshed.accessToken,
     );
-
-  const athleteData =
-    await athleteResponse
-      .json()
-      .catch(() => null);
-
-  if (!athleteResponse.ok) {
-    console.error(
-      "Failed to fetch Strava athlete:",
-      {
-        status:
-          athleteResponse.status,
-        data: athleteData,
-      },
-    );
-
-    throw new Error(
-      "Unable to load Strava athlete.",
-    );
-  }
-
-  if (
-    typeof athleteData?.id !== "number"
-  ) {
-    throw new Error(
-      "Strava returned an invalid athlete.",
-    );
-  }
 
   return {
     ...refreshed,
 
     athleteId:
-      athleteData.id,
+      athlete.id,
 
     firstname:
-      typeof athleteData.firstname ===
+      typeof athlete.firstname ===
       "string"
-        ? athleteData.firstname
+        ? athlete.firstname
         : "",
 
     lastname:
-      typeof athleteData.lastname ===
+      typeof athlete.lastname ===
       "string"
-        ? athleteData.lastname
+        ? athlete.lastname
         : "",
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Get public Strava authentication                                          */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Get Public Authentication
+ * ========================================================================== */
 
 export async function getPublicStravaAuth(): Promise<StravaAuth> {
   /*
-   * Reuse the current in-memory token when
-   * it still has more than one hour remaining.
+   * Use cached authentication while the token
+   * has more than one hour remaining.
    */
   if (
     publicAuthCache &&
@@ -364,21 +551,27 @@ export async function getPublicStravaAuth(): Promise<StravaAuth> {
   }
 
   /*
-   * If another request is already refreshing,
-   * wait for that request.
+   * Prevent concurrent refreshes.
+   *
+   * Without this, several dashboard components
+   * could refresh the same Strava token at once.
    */
-  if (publicAuthRefreshPromise) {
-    return publicAuthRefreshPromise;
+  if (
+    publicAuthPromise
+  ) {
+    return publicAuthPromise;
   }
 
-  publicAuthRefreshPromise =
+  publicAuthPromise =
     (async () => {
       try {
         /*
-         * If we already have authentication,
+         * Existing cached authentication:
          * refresh it.
          */
-        if (publicAuthCache) {
+        if (
+          publicAuthCache
+        ) {
           publicAuthCache =
             await refreshStravaAuth(
               publicAuthCache,
@@ -389,26 +582,86 @@ export async function getPublicStravaAuth(): Promise<StravaAuth> {
 
         /*
          * First request / cold start.
-         *
-         * Use STRAVA_REFRESH_TOKEN.
          */
         publicAuthCache =
           await createPublicAuth();
 
         return publicAuthCache;
+      } catch (error) {
+        publicAuthCache =
+          null;
+
+        throw error;
       } finally {
-        publicAuthRefreshPromise =
+        publicAuthPromise =
           null;
       }
     })();
 
-  return publicAuthRefreshPromise;
+  return publicAuthPromise;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Clear public authentication                                               */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Force Public Authentication Refresh
+ * ========================================================================== */
+
+export async function refreshPublicStravaAuth(): Promise<StravaAuth> {
+  /*
+   * If another request is already refreshing,
+   * wait for it.
+   */
+  if (
+    publicAuthPromise
+  ) {
+    return publicAuthPromise;
+  }
+
+  publicAuthPromise =
+    (async () => {
+      try {
+        /*
+         * Refresh the existing cached token.
+         */
+        if (
+          publicAuthCache
+        ) {
+          publicAuthCache =
+            await refreshStravaAuth(
+              publicAuthCache,
+            );
+
+          return publicAuthCache;
+        }
+
+        /*
+         * No cache exists.
+         *
+         * Create authentication from the
+         * configured refresh token.
+         */
+        publicAuthCache =
+          await createPublicAuth();
+
+        return publicAuthCache;
+      } catch (error) {
+        publicAuthCache =
+          null;
+
+        throw error;
+      } finally {
+        publicAuthPromise =
+          null;
+      }
+    })();
+
+  return publicAuthPromise;
+}
+
+/* ============================================================================
+ * Clear Public Authentication
+ * ========================================================================== */
 
 export function clearPublicStravaAuth(): void {
-  publicAuthCache = null;
+  publicAuthCache =
+    null;
 }

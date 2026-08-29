@@ -1,9 +1,6 @@
-import { cookies } from "next/headers";
-
 import {
-  STRAVA_AUTH_COOKIE,
-  decryptStravaAuth,
-  refreshStravaAuth,
+  getPublicStravaAuth,
+  refreshPublicStravaAuth,
   type StravaAuth,
 } from "@/lib/strava/auth";
 
@@ -17,375 +14,433 @@ import type {
   StravaGear,
 } from "@/lib/strava/types";
 
-/* -------------------------------------------------------------------------- */
-/* Configuration                                                              */
-const STRAVA_API_URL = "https://www.strava.com/api/v3";
+/* ============================================================================
+ * Configuration
+ * ========================================================================== */
 
-/* -------------------------------------------------------------------------- */
-/* Authentication                                                             */
-/* -------------------------------------------------------------------------- */
+const STRAVA_API_URL =
+  "https://www.strava.com/api/v3";
 
-/**
- * Get the current Strava authentication.
- *
- * This function only reads the authentication cookie.
- *
- * It does not:
- * - refresh the access token
- * - modify cookies
- * - set cookies
- *
- * Token refreshing is handled separately by the application's
- * authentication flow.
+/*
+ * Maximum number of pages used by the
+ * "get all" helper functions.
  */
-let publicStravaAuth: StravaAuth | null = null;
-let publicStravaRefreshPromise: Promise<StravaAuth> | null = null;
+const MAX_ACTIVITY_PAGES =
+  50;
 
-async function getPublicStravaAuth(): Promise<StravaAuth> {
-  const refreshToken =
-    process.env.STRAVA_REFRESH_TOKEN;
+/*
+ * Strava's maximum per_page value.
+ */
+const MAX_PER_PAGE =
+  200;
 
-  if (!refreshToken) {
-    throw new Error(
-      "STRAVA_REFRESH_TOKEN is not configured.",
-    );
+/* ============================================================================
+ * Errors
+ * ========================================================================== */
+
+export class StravaApiError
+  extends Error {
+  readonly status: number;
+  readonly endpoint: string;
+  readonly details: unknown;
+
+  constructor(
+    message: string,
+    status: number,
+    endpoint: string,
+    details?: unknown,
+  ) {
+    super(message);
+
+    this.name =
+      "StravaApiError";
+
+    this.status =
+      status;
+
+    this.endpoint =
+      endpoint;
+
+    this.details =
+      details;
   }
-
-  if (publicStravaAuth) {
-    const now = Math.floor(
-      Date.now() / 1000,
-    );
-
-    if (
-      publicStravaAuth.expiresAt >
-      now + 60 * 60
-    ) {
-      return publicStravaAuth;
-    }
-  }
-
-  if (publicStravaRefreshPromise) {
-    return publicStravaRefreshPromise;
-  }
-
-  publicStravaRefreshPromise = (async () => {
-    try {
-      const baseAuth: StravaAuth =
-        publicStravaAuth ?? {
-          athleteId: 0,
-          firstname: "",
-          lastname: "",
-          accessToken: "",
-          refreshToken,
-          expiresAt: 0,
-          scope:
-            "read,activity:read_all",
-        };
-
-      const refreshed =
-        await refreshStravaAuth(
-          baseAuth,
-        );
-
-      const athleteResponse =
-        await fetch(
-          `${STRAVA_API_URL}/athlete`,
-          {
-            method: "GET",
-            headers: {
-              Authorization:
-                `Bearer ${refreshed.accessToken}`,
-              Accept:
-                "application/json",
-            },
-            cache: "no-store",
-          },
-        );
-
-      const athlete =
-        await athleteResponse
-          .json()
-          .catch(() => null);
-
-      if (!athleteResponse.ok) {
-        console.error(
-          "Failed to fetch public Strava athlete:",
-          {
-            status:
-              athleteResponse.status,
-            data: athlete,
-          },
-        );
-
-        throw new Error(
-          "Unable to load the configured Strava athlete.",
-        );
-      }
-
-      if (
-        typeof athlete?.id !== "number"
-      ) {
-        throw new Error(
-          "Strava returned an invalid athlete.",
-        );
-      }
-
-      publicStravaAuth = {
-        ...refreshed,
-        athleteId: athlete.id,
-        firstname:
-          typeof athlete.firstname ===
-          "string"
-            ? athlete.firstname
-            : "",
-        lastname:
-          typeof athlete.lastname ===
-          "string"
-            ? athlete.lastname
-            : "",
-      };
-
-      return publicStravaAuth;
-    } finally {
-      publicStravaRefreshPromise =
-        null;
-    }
-  })();
-
-  return publicStravaRefreshPromise;
 }
 
-export async function getStravaAuth() {
-  const cookieStore =
-    await cookies();
+export class StravaAuthenticationError
+  extends StravaApiError {
+  constructor(
+    endpoint: string,
+    details?: unknown,
+  ) {
+    super(
+      "STRAVA_AUTH_EXPIRED",
+      401,
+      endpoint,
+      details,
+    );
 
-  const authCookie =
-    cookieStore.get(
-      STRAVA_AUTH_COOKIE,
-    )?.value;
-
-  /*
-   * Prefer a normal browser authentication cookie
-   * when one exists. This keeps the existing OAuth
-   * flow working.
-   */
-  if (authCookie) {
-    const auth =
-      await decryptStravaAuth(
-        authCookie,
-      );
-
-    if (auth) {
-      return auth;
-    }
+    this.name =
+      "StravaAuthenticationError";
   }
+}
 
-  /*
-   * Public EndrivoIQ mode:
-   *
-   * If a visitor has no Strava cookie, use the
-   * application's STRAVA_REFRESH_TOKEN instead.
-   *
-   * This means visitors do not need to log in to
-   * Strava and no database is required.
-   */
+export class StravaPermissionError
+  extends StravaApiError {
+  constructor(
+    endpoint: string,
+    details?: unknown,
+  ) {
+    super(
+      "STRAVA_PERMISSION_DENIED",
+      403,
+      endpoint,
+      details,
+    );
+
+    this.name =
+      "StravaPermissionError";
+  }
+}
+
+/* ============================================================================
+ * Authentication
+ * ========================================================================== */
+
+/*
+ * Get the server-side Strava authentication.
+ *
+ * IMPORTANT:
+ *
+ * We intentionally use public authentication here.
+ *
+ * This means:
+ *
+ * Normal browser  -> works
+ * Incognito       -> works
+ * Another browser -> works
+ * Another visitor -> works
+ *
+ * The browser does NOT need to have the OAuth cookie.
+ */
+async function getStravaAuth(): Promise<StravaAuth> {
   try {
     return await getPublicStravaAuth();
   } catch (error) {
-    console.error(
-      "Failed to load public Strava authentication:",
-      error,
-    );
+    if (
+      error instanceof Error
+    ) {
+      throw error;
+    }
 
-    return null;
+    throw new Error(
+      "STRAVA_AUTH_UNAVAILABLE",
+    );
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Generic Strava Request                                                     */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Low-level Fetch
+ * ========================================================================== */
 
-/**
- * Make an authenticated request to Strava.
- *
- * All Strava requests go through this function so the access token
- * is handled consistently.
- */
+async function fetchStrava<T>(
+  endpoint: string,
+  accessToken: string,
+): Promise<{
+  response: Response;
+  data: T | null;
+}> {
+  let response: Response;
+
+  try {
+    response =
+      await fetch(
+        `${STRAVA_API_URL}${endpoint}`,
+        {
+          method: "GET",
+
+          headers: {
+            Authorization:
+              `Bearer ${accessToken}`,
+
+            Accept:
+              "application/json",
+          },
+
+          cache: "no-store",
+        },
+      );
+  } catch {
+    throw new StravaApiError(
+      "STRAVA_NETWORK_ERROR",
+      0,
+      endpoint,
+    );
+  }
+
+  const data =
+    await response
+      .json()
+      .catch(() => null);
+
+  return {
+    response,
+    data,
+  };
+}
+
+/* ============================================================================
+ * Generic Strava Request
+ * ========================================================================== */
+
 async function stravaFetch<T>(
   endpoint: string,
 ): Promise<T> {
-  const auth =
+  let auth =
     await getStravaAuth();
 
-  if (!auth) {
-    throw new Error(
-      "Strava account is not connected.",
-    );
-  }
+  /*
+   * ----------------------------------------------------------
+   * First request
+   * ----------------------------------------------------------
+   */
 
-  const response =
-    await fetch(
-      `${STRAVA_API_URL}${endpoint}`,
-      {
-        method: "GET",
-
-        headers: {
-          Authorization:
-            `Bearer ${auth.accessToken}`,
-
-          Accept:
-            "application/json",
-        },
-
-        /*
-         * Always fetch fresh Strava data.
-         */
-        cache: "no-store",
-      },
+  let result =
+    await fetchStrava<T>(
+      endpoint,
+      auth.accessToken,
     );
 
-  if (!response.ok) {
-    let details:
-      | {
-          message?: string;
-          errors?: unknown;
-        }
-      | null = null;
+  /*
+   * ----------------------------------------------------------
+   * 401 handling
+   * ----------------------------------------------------------
+   *
+   * The access token may have expired/revoked.
+   *
+   * Refresh once and retry once.
+   *
+   * We NEVER retry indefinitely.
+   * ----------------------------------------------------------
+   */
 
+  if (
+    result.response.status ===
+    401
+  ) {
     try {
-      details =
-        await response.json();
-    } catch {
-      details = null;
-    }
+      auth =
+        await refreshPublicStravaAuth();
 
-    console.error(
-      "Strava API error:",
-      {
-        status:
-          response.status,
+      result =
+        await fetchStrava<T>(
+          endpoint,
+          auth.accessToken,
+        );
+    } catch (error) {
+      /*
+       * Do not expose token values.
+       */
+      console.error(
+        "Unable to refresh Strava authentication.",
+        error,
+      );
 
+      throw new StravaAuthenticationError(
         endpoint,
-
-        details,
-      },
-    );
-
-    if (
-      response.status === 401
-    ) {
-      throw new Error(
-        "Strava authentication has expired. Please reconnect Strava.",
       );
     }
+  }
 
-    if (
-      response.status === 403
-    ) {
-      throw new Error(
-        "Strava denied access to this resource. Check your Strava permissions.",
-      );
-    }
+  /*
+   * ----------------------------------------------------------
+   * Successful response
+   * ----------------------------------------------------------
+   */
 
-    throw new Error(
-      details?.message ??
-        `Strava API request failed: ${response.status}`,
+  if (
+    result.response.ok
+  ) {
+    return result.data as T;
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * Authentication failure after retry
+   * ----------------------------------------------------------
+   */
+
+  if (
+    result.response.status ===
+    401
+  ) {
+    throw new StravaAuthenticationError(
+      endpoint,
+      result.data,
     );
   }
 
-  return response.json() as Promise<T>;
+  /*
+   * ----------------------------------------------------------
+   * Permission failure
+   * ----------------------------------------------------------
+   */
+
+  if (
+    result.response.status ===
+    403
+  ) {
+    throw new StravaPermissionError(
+      endpoint,
+      result.data,
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * Rate limit
+   * ----------------------------------------------------------
+   */
+
+  if (
+    result.response.status ===
+    429
+  ) {
+    throw new StravaApiError(
+      "STRAVA_RATE_LIMIT",
+      429,
+      endpoint,
+      result.data,
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * Other API error
+   * ----------------------------------------------------------
+   */
+
+  const message =
+    typeof (
+      result.data as {
+        message?: unknown;
+      } | null
+    )?.message ===
+    "string"
+      ? (
+          result.data as {
+            message: string;
+          }
+        ).message
+      : `STRAVA_API_ERROR_${result.response.status}`;
+
+  throw new StravaApiError(
+    message,
+    result.response.status,
+    endpoint,
+    result.data,
+  );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Connection                                                                 */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Connection
+ * ========================================================================== */
 
-/**
- * Check whether the user has a Strava connection.
- */
 export async function isStravaConnected(): Promise<boolean> {
-  const auth =
+  try {
     await getStravaAuth();
 
-  return Boolean(auth);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Athlete                                                                    */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Athlete
+ * ========================================================================== */
 
-/**
- * Get the currently authenticated Strava athlete.
- *
- * GET /athlete
- */
 export async function getAthlete(): Promise<StravaAthlete> {
   return stravaFetch<StravaAthlete>(
     "/athlete",
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Activities                                                                 */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Activities
+ * ========================================================================== */
 
-/**
- * Fetch one page of Strava activities.
- *
- * Strava allows a maximum of 200 activities per page.
- *
- * Optional:
- * - after  → Unix timestamp
- * - before → Unix timestamp
- */
+export interface GetActivitiesOptions {
+  after?: number;
+  before?: number;
+}
+
 export async function getActivities(
   page = 1,
   perPage = 200,
-  options?: {
-    after?: number;
-    before?: number;
-  },
+  options?: GetActivitiesOptions,
 ): Promise<StravaActivity[]> {
+  const safePage =
+    Number.isFinite(page)
+      ? Math.max(
+          1,
+          Math.floor(page),
+        )
+      : 1;
+
+  const safePerPage =
+    Number.isFinite(perPage)
+      ? Math.min(
+          MAX_PER_PAGE,
+          Math.max(
+            1,
+            Math.floor(perPage),
+          ),
+        )
+      : MAX_PER_PAGE;
+
   const query =
     new URLSearchParams();
 
   query.set(
     "page",
-    String(
-      Math.max(1, page),
-    ),
+    String(safePage),
   );
 
   query.set(
     "per_page",
-    String(
-      Math.min(
-        Math.max(1, perPage),
-        200,
-      ),
-    ),
+    String(safePerPage),
   );
 
   if (
     options?.after !==
-    undefined
+    undefined &&
+    Number.isFinite(
+      options.after,
+    )
   ) {
     query.set(
       "after",
       String(
-        options.after,
+        Math.floor(
+          options.after,
+        ),
       ),
     );
   }
 
   if (
     options?.before !==
-    undefined
+    undefined &&
+    Number.isFinite(
+      options.before,
+    )
   ) {
     query.set(
       "before",
       String(
-        options.before,
+        Math.floor(
+          options.before,
+        ),
       ),
     );
   }
@@ -397,34 +452,32 @@ export async function getActivities(
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* All Activities                                                             */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * All Activities
+ * ========================================================================== */
 
-/**
- * Fetch all available Strava activities.
- *
- * Activities are returned newest first.
- */
 export async function getAllActivities(): Promise<
   StravaActivity[]
 > {
-  const allActivities: StravaActivity[] =
+  const allActivities:
+    StravaActivity[] =
     [];
 
-  let page = 1;
-
-  const perPage = 200;
-
-  while (true) {
+  for (
+    let page = 1;
+    page <=
+    MAX_ACTIVITY_PAGES;
+    page++
+  ) {
     const activities =
       await getActivities(
         page,
-        perPage,
+        MAX_PER_PAGE,
       );
 
     if (
-      activities.length === 0
+      activities.length ===
+      0
     ) {
       break;
     }
@@ -434,59 +487,65 @@ export async function getAllActivities(): Promise<
     );
 
     /*
-     * Less than 200 means there are
-     * no more pages.
+     * Last page.
      */
     if (
       activities.length <
-      perPage
+      MAX_PER_PAGE
     ) {
       break;
     }
-
-    page += 1;
   }
 
   return allActivities;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Year To Date Activities                                                   */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Year-to-Date Activities
+ * ========================================================================== */
 
-/**
- * Fetch all activities from January 1st of the current year.
- */
 export async function getYearToDateActivities(): Promise<
   StravaActivity[]
 > {
   const now =
     new Date();
 
+  /*
+   * Start of current year.
+   *
+   * This represents local server time.
+   */
   const startOfYear =
     new Date(
       now.getFullYear(),
       0,
       1,
+      0,
+      0,
+      0,
+      0,
     );
 
-  const after = Math.floor(
-    startOfYear.getTime() /
-      1000,
-  );
+  const after =
+    Math.floor(
+      startOfYear.getTime() /
+        1000,
+    );
 
-  const activities: StravaActivity[] =
+  const activities:
+    StravaActivity[] =
     [];
 
-  let page = 1;
-
-  const perPage = 200;
-
-  while (true) {
+  for (
+    let page = 1;
+    page <=
+    MAX_ACTIVITY_PAGES;
+    page++
+  ) {
     const pageActivities =
       await getActivities(
         page,
-        perPage,
+        MAX_PER_PAGE,
         {
           after,
         },
@@ -505,40 +564,30 @@ export async function getYearToDateActivities(): Promise<
 
     if (
       pageActivities.length <
-      perPage
+      MAX_PER_PAGE
     ) {
       break;
     }
-
-    page += 1;
   }
 
   return activities;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Running Activities                                                         */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Running Activities
+ * ========================================================================== */
 
-/**
- * Determine whether an activity is a run.
- */
 export function isRunningActivity(
   activity: StravaActivity,
 ): boolean {
   return (
-    activity.type === "Run" ||
-    activity.sport_type === "Run"
+    activity.type ===
+      "Run" ||
+    activity.sport_type ===
+      "Run"
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* All Running Activities                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Fetch all running activities.
- */
 export async function getAllRuns(): Promise<
   StravaActivity[]
 > {
@@ -550,14 +599,6 @@ export async function getAllRuns(): Promise<
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Year To Date Running Activities                                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Fetch all running activities
- * from the current year.
- */
 export async function getYearToDateRuns(): Promise<
   StravaActivity[]
 > {
@@ -569,95 +610,92 @@ export async function getYearToDateRuns(): Promise<
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Recent Runs                                                                */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Recent Runs
+ * ========================================================================== */
 
-/**
- * Return the most recent running activities.
- */
 export async function getRecentRuns(
   limit = 3,
 ): Promise<StravaActivity[]> {
+  const safeLimit =
+    Number.isFinite(limit)
+      ? Math.max(
+          0,
+          Math.floor(limit),
+        )
+      : 3;
+
   const runs =
     await getAllRuns();
 
   return runs.slice(
     0,
-    Math.max(0, limit),
+    safeLimit,
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Recent Year Runs                                                           */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Return the most recent running activities
- * from the current year.
- */
 export async function getRecentYearRuns(
   limit = 3,
 ): Promise<StravaActivity[]> {
+  const safeLimit =
+    Number.isFinite(limit)
+      ? Math.max(
+          0,
+          Math.floor(limit),
+        )
+      : 3;
+
   const runs =
     await getYearToDateRuns();
 
   return runs.slice(
     0,
-    Math.max(0, limit),
+    safeLimit,
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Single Activity                                                            */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Activity
+ * ========================================================================== */
 
-/**
- * Fetch a single detailed Strava activity.
- *
- * This endpoint is important for:
- *
- * - device_name
- * - gear_id
- * - gear
- * - heart rate
- * - detailed activity information
- */
 export async function getActivity(
-  activityId: number | string,
+  activityId:
+    | number
+    | string,
 ): Promise<StravaActivity> {
+  const id =
+    String(activityId).trim();
+
+  if (!id) {
+    throw new Error(
+      "STRAVA_ACTIVITY_ID_REQUIRED",
+    );
+  }
+
   return stravaFetch<StravaActivity>(
-    `/activities/${encodeURIComponent(
-      String(activityId),
-    )}`,
+    `/activities/${encodeURIComponent(id)}`,
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Activity Streams                                                           */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Activity Streams
+ * ========================================================================== */
 
-/**
- * Fetch detailed activity streams.
- *
- * Includes:
- * - time
- * - distance
- * - GPS
- * - altitude
- * - speed
- * - heart rate
- * - cadence
- * - power
- * - temperature
- * - moving
- * - grade
- */
 export async function getActivityStreams(
-  activityId: number | string,
+  activityId:
+    | number
+    | string,
 ): Promise<StravaActivityStreams> {
-  const keys = 
-  [
+  const id =
+    String(activityId).trim();
+
+  if (!id) {
+    throw new Error(
+      "STRAVA_ACTIVITY_ID_REQUIRED",
+    );
+  }
+
+  const keys = [
     "time",
     "distance",
     "latlng",
@@ -675,97 +713,89 @@ export async function getActivityStreams(
     new URLSearchParams({
       keys:
         keys.join(","),
+
       key_by_type:
         "true",
     });
 
   return stravaFetch<StravaActivityStreams>(
-    `/activities/${encodeURIComponent(
-      String(activityId),
-    )}/streams?${query.toString()}`,
+    `/activities/${encodeURIComponent(id)}/streams?${query.toString()}`,
   );
 }
 
+/* ============================================================================
+ * Athlete Heart Rate Zones
+ * ========================================================================== */
 
-/* -------------------------------------------------------------------------- */
-/* Athlete Heart Rate Zones                                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Fetch the authenticated athlete's configured
- * heart-rate and power zones directly from Strava.
- *
- * GET /athlete/zones
- *
- * This does not calculate zones locally.
- */
 export async function getAthleteZones(): Promise<StravaAthleteZones> {
   return stravaFetch<StravaAthleteZones>(
     "/athlete/zones",
   );
 }
 
+/* ============================================================================
+ * Activity Zones
+ * ========================================================================== */
 
-/* -------------------------------------------------------------------------- */
-/* Activity Heart Rate Zones                                                  */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Fetch Strava's own heart-rate zone distribution
- * for a specific activity.
- *
- * GET /activities/{id}/zones
- */
 export async function getActivityZones(
-  activityId: number | string,
+  activityId:
+    | number
+    | string,
 ): Promise<StravaActivityZone[]> {
-  return stravaFetch<StravaActivityZone[]>(
-    `/activities/${encodeURIComponent(
-      String(activityId),
-    )}/zones`,
+  const id =
+    String(activityId).trim();
+
+  if (!id) {
+    throw new Error(
+      "STRAVA_ACTIVITY_ID_REQUIRED",
+    );
+  }
+
+  return stravaFetch<
+    StravaActivityZone[]
+  >(
+    `/activities/${encodeURIComponent(id)}/zones`,
   );
 }
 
+/* ============================================================================
+ * Gear
+ * ========================================================================== */
 
-/* -------------------------------------------------------------------------- */
-/* Gear                                                                       */
-/* -------------------------------------------------------------------------- */
+export async function getGear(
+  gearId: string,
+): Promise<StravaGear> {
+  const id =
+    String(gearId).trim();
 
-/**
- * Fetch detailed Strava gear.
- *
- * GET /gear/{id}
- */
+  if (!id) {
+    throw new Error(
+      "STRAVA_GEAR_ID_REQUIRED",
+    );
+  }
 
-export async function getGear(gearId: string): Promise<StravaGear> {
   return stravaFetch<StravaGear>(
-    `/gear/${encodeURIComponent(
-      gearId,
-    )}`,
+    `/gear/${encodeURIComponent(id)}`,
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Activity Gear                                                              */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Activity Gear
+ * ========================================================================== */
 
-/**
- * Get the gear used for a specific activity.
- *
- * First checks the detailed activity's `gear`.
- *
- * If that is not available but `gear_id`
- * exists, it fetches the gear separately.
- */
 export async function getActivityGear(
-  activityId: number | string,
+  activityId:
+    | number
+    | string,
 ): Promise<StravaGear | null> {
   const activity =
     await getActivity(
       activityId,
     );
 
-  if (activity.gear) {
+  if (
+    activity.gear
+  ) {
     return activity.gear;
   }
 
@@ -780,19 +810,10 @@ export async function getActivityGear(
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Running Gear                                                               */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Running Gear
+ * ========================================================================== */
 
-/**
- * Get unique gear used by running activities.
- *
- * This is used by the Progress page:
- *
- * Gear & data sources
- *
- * - Running shoes
- */
 export async function getRunningGear(): Promise<
   StravaGear[]
 > {
@@ -802,17 +823,20 @@ export async function getRunningGear(): Promise<
   const gearIds =
     new Set<string>();
 
-  /*
-   * Collect unique gear IDs.
-   */
-  for (const run of runs) {
-    if (run.gear_id) {
+  for (
+    const run of runs
+  ) {
+    if (
+      run.gear_id
+    ) {
       gearIds.add(
         run.gear_id,
       );
     }
 
-    if (run.gear?.id) {
+    if (
+      run.gear?.id
+    ) {
       gearIds.add(
         run.gear.id,
       );
@@ -820,102 +844,42 @@ export async function getRunningGear(): Promise<
   }
 
   if (
-    gearIds.size === 0
+    gearIds.size ===
+    0
   ) {
     return [];
   }
 
-  const gear =
+  const results =
     await Promise.all(
       Array.from(
         gearIds,
       ).map(
-        async (gearId) => {
+        async (
+          gearId,
+        ) => {
           try {
             return await getGear(
               gearId,
             );
-          } catch (error) {
-            console.error(
-              `Failed to fetch Strava gear ${gearId}:`,
-              error,
-            );
-
+          } catch {
             return null;
           }
         },
       ),
     );
 
-  return gear.filter(
+  return results.filter(
     (
-      item,
-    ): item is StravaGear =>
-      item !== null,
+      gear,
+    ): gear is StravaGear =>
+      gear !== null,
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Device / Watch                                                             */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Find the recording device used by the athlete's running activities.
- *
- * Example:
- *
- *
- * The device appearing most frequently is returned.
- */
-export async function getRunningDevice(): Promise<
-  string | null
-> {
-  const runs =
-    await getAllRuns();
-
-  const deviceCounts =
-    new Map<
-      string,
-      number
-    >();
-
-  for (const run of runs) {
-    const device =
-      run.device_name?.trim();
-
-    if (!device) {
-      continue;
-    }
-
-    deviceCounts.set(
-      device,
-      (deviceCounts.get(
-        device,
-      ) ?? 0) + 1,
-    );
-  }
-
-  if (
-    deviceCounts.size === 0
-  ) {
-    return null;
-  }
-
-  const sorted =
-    Array.from(
-      deviceCounts.entries(),
-    ).sort(
-      (a, b) =>
-        b[1] - a[1],
-    );
-
-  return sorted[0]?.[0] ??
-    null;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Running Equipment                                                          */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Running Equipment
+ * ========================================================================== */
 
 export interface StravaEquipment {
   watch: {
@@ -935,237 +899,231 @@ export interface StravaEquipment {
   }[];
 }
 
-/**
- * Fetch all equipment information needed by the Progress page.
- *
- * This does NOT create mock data.
- *
- * Data comes from the authenticated Strava account:
- *
- * Watch
- *   activity.device_name
- *
- * Shoes
- *   activity.gear_id
- *   GET /gear/{id}
- *
- *   Strava OAuth connection
- */
 export async function getRunningEquipment(): Promise<
   StravaEquipment
 > {
-  const connected =
-    await isStravaConnected();
+  try {
+    const runs =
+      await getAllRuns();
 
-  if (!connected) {
-    return {
-      watch: null,
-      shoes: [],
-      dataSources: [],
-    };
-  }
+    const deviceCounts =
+      new Map<
+        string,
+        number
+      >();
 
-  const runs =
-    await getAllRuns();
+    for (
+      const run of runs
+    ) {
+      const device =
+        run.device_name?.trim();
 
-  /* ------------------------------------------------------------------------ */
-  /* Watch                                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const deviceCounts =
-    new Map<
-      string,
-      number
-    >();
-
-  for (const run of runs) {
-    const device =
-      run.device_name?.trim();
-
-    if (!device) {
-      continue;
-    }
-
-    deviceCounts.set(
-      device,
-      (deviceCounts.get(
-        device,
-      ) ?? 0) + 1,
-    );
-  }
-
-  let watch:
-    StravaEquipment["watch"] =
-    null;
-
-  if (
-    deviceCounts.size > 0
-  ) {
-    const sortedDevices =
-      Array.from(
-        deviceCounts.entries(),
-      ).sort(
-        (a, b) =>
-          b[1] - a[1],
-      );
-
-    const [
-      deviceName,
-      count,
-    ] =
-      sortedDevices[0];
-
-    watch = {
-      name: deviceName,
-      status:
-        `${count} ${
-          count === 1
-            ? "run"
-            : "runs"
-        } recorded`,
-    };
-  }
-
-  /* ------------------------------------------------------------------------ */
-  /* Shoes                                                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const gearIds =
-    new Set<string>();
-
-  for (const run of runs) {
-    if (run.gear_id) {
-      gearIds.add(
-        run.gear_id,
-      );
-    }
-
-    if (run.gear?.id) {
-      gearIds.add(
-        run.gear.id,
-      );
-    }
-  }
-
-  const shoes: StravaEquipment["shoes"] =
-    [];
-
-  if (
-    gearIds.size > 0
-  ) {
-    const gearResults =
-      await Promise.all(
-        Array.from(
-          gearIds,
-        ).map(
-          async (gearId) => {
-            try {
-              return await getGear(
-                gearId,
-              );
-            } catch (error) {
-              console.error(
-                `Failed to fetch Strava gear ${gearId}:`,
-                error,
-              );
-
-              return null;
-            }
-          },
-        ),
-      );
-
-    for (const gear of gearResults) {
-      if (!gear) {
+      if (!device) {
         continue;
       }
 
-      const brand =
-        gear.brand_name?.trim() ??
-        "";
-
-      const model =
-        gear.model_name?.trim() ??
-        "";
-
-      const description =
-        gear.description?.trim() ??
-        "";
-
-      const name =
-        `${brand} ${model}`.trim() ||
-        description ||
-        gear.name?.trim() ||
-        "Running shoes";
-
-      const distance =
-        typeof gear.distance ===
-          "number"
-          ? gear.distance / 1000
-          : undefined;
-
-      shoes.push({
-        name,
-
-        distance,
-
-        status:
-          distance !== undefined
-            ? `${distance.toFixed(0)} km`
-            : "Strava gear",
-      });
+      deviceCounts.set(
+        device,
+        (
+          deviceCounts.get(
+            device,
+          ) ?? 0
+        ) + 1,
+      );
     }
+
+    let watch:
+      StravaEquipment["watch"] =
+      null;
+
+    if (
+      deviceCounts.size >
+      0
+    ) {
+      const sorted =
+        Array.from(
+          deviceCounts.entries(),
+        ).sort(
+          (
+            a,
+            b,
+          ) =>
+            b[1] - a[1],
+        );
+
+      const first =
+        sorted[0];
+
+      if (first) {
+        const [
+          deviceName,
+          count,
+        ] = first;
+
+        watch = {
+          name:
+            deviceName,
+
+          status:
+            `${count} ${
+              count === 1
+                ? "run"
+                : "runs"
+            } recorded`,
+        };
+      }
+    }
+
+    const gearIds =
+      new Set<string>();
+
+    for (
+      const run of runs
+    ) {
+      if (
+        run.gear_id
+      ) {
+        gearIds.add(
+          run.gear_id,
+        );
+      }
+
+      if (
+        run.gear?.id
+      ) {
+        gearIds.add(
+          run.gear.id,
+        );
+      }
+    }
+
+    const shoes:
+      StravaEquipment["shoes"] =
+      [];
+
+    if (
+      gearIds.size >
+      0
+    ) {
+      const gearResults =
+        await Promise.all(
+          Array.from(
+            gearIds,
+          ).map(
+            async (
+              gearId,
+            ) => {
+              try {
+                return await getGear(
+                  gearId,
+                );
+              } catch {
+                return null;
+              }
+            },
+          ),
+        );
+
+      for (
+        const gear of
+          gearResults
+      ) {
+        if (!gear) {
+          continue;
+        }
+
+        const brand =
+          gear.brand_name?.trim() ??
+          "";
+
+        const model =
+          gear.model_name?.trim() ??
+          "";
+
+        const description =
+          gear.description?.trim() ??
+          "";
+
+        const name =
+          `${brand} ${model}`.trim() ||
+          description ||
+          gear.name?.trim() ||
+          "Running shoes";
+
+        const distance =
+          typeof gear.distance ===
+          "number"
+            ? gear.distance /
+              1000
+            : undefined;
+
+        shoes.push({
+          name,
+
+          distance,
+
+          status:
+            distance !==
+            undefined
+              ? `${distance.toFixed(
+                  0,
+                )} km`
+              : "Strava gear",
+        });
+      }
+    }
+
+    return {
+      watch,
+
+      shoes,
+
+      dataSources: [
+        {
+          name:
+            "Strava",
+
+          status:
+            "Connected",
+        },
+      ],
+    };
+  } catch {
+    /*
+     * Return a safe empty state instead of
+     * crashing the settings page.
+     */
+    return {
+      watch: null,
+
+      shoes: [],
+
+      dataSources: [],
+    };
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* Data source                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const dataSources =
-    connected
-      ? [
-          {
-            name: "Strava",
-            status: "Connected",
-          },
-        ]
-      : [];
-
-  return {
-    watch,
-    shoes,
-    dataSources,
-  };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Athlete Stats                                                              */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+ * Athlete Statistics
+ * ========================================================================== */
 
-/**
- * Fetch Strava athlete statistics.
- *
- * GET /athletes/{id}/stats
- */
 export async function getAthleteStats(
-  athleteId?: number | string,
+  athleteId?:
+    | number
+    | string,
 ): Promise<StravaAthleteStats> {
   const auth =
     await getStravaAuth();
-
-  if (!auth) {
-    throw new Error(
-      "Strava account is not connected.",
-    );
-  }
 
   const id =
     athleteId ??
     auth.athleteId;
 
-  if (!id) {
+  if (
+    !id
+  ) {
     throw new Error(
-      "Strava athlete ID is not available.",
+      "STRAVA_ATHLETE_ID_REQUIRED",
     );
   }
 

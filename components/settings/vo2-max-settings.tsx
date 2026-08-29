@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type ChangeEvent,
   useCallback,
   useMemo,
   useState,
@@ -75,8 +76,8 @@ function readStoredValues(): StoredValues {
   return {
     age:
       Number.isInteger(age) &&
-      age >= 10 &&
-      age <= 100
+        age >= 10 &&
+        age <= 100
         ? age
         : DEFAULT_VALUES.age,
 
@@ -84,14 +85,14 @@ function readStoredValues(): StoredValues {
       Number.isInteger(
         restingHeartRate,
       ) &&
-      restingHeartRate >= 30 &&
-      restingHeartRate <= 120
+        restingHeartRate >= 30 &&
+        restingHeartRate <= 120
         ? restingHeartRate
         : DEFAULT_VALUES.restingHeartRate,
 
     vo2Max:
       Number.isFinite(parsedVo2Max) &&
-      parsedVo2Max > 0
+        parsedVo2Max > 0
         ? parsedVo2Max
         : DEFAULT_VALUES.vo2Max,
   };
@@ -113,7 +114,7 @@ function subscribe(
   callback: () => void,
 ): () => void {
   if (typeof window === "undefined") {
-    return () => {};
+    return () => { };
   }
 
   const handleStorage = (
@@ -123,7 +124,7 @@ function subscribe(
       event.key === null ||
       event.key === STORAGE_KEYS.age ||
       event.key ===
-        STORAGE_KEYS.restingHeartRate ||
+      STORAGE_KEYS.restingHeartRate ||
       event.key === STORAGE_KEYS.vo2Max
     ) {
       callback();
@@ -311,8 +312,8 @@ export function Vo2MaxSettings() {
     useState(
       storedValues.vo2Max !== null
         ? String(
-            storedValues.vo2Max,
-          )
+          storedValues.vo2Max,
+        )
         : "",
     );
 
@@ -385,7 +386,7 @@ export function Vo2MaxSettings() {
   const ringOffset =
     circumference -
     (ringScore / 100) *
-      circumference;
+    circumference;
 
   /* ------------------------------------------------------------------------ */
   /* Handlers                                                                 */
@@ -394,7 +395,7 @@ export function Vo2MaxSettings() {
   const handleAgeChange =
     useCallback(
       (
-        event: React.ChangeEvent<HTMLInputElement>,
+        event: ChangeEvent<HTMLInputElement>,
       ) => {
         const value =
           event.target.value.replace(
@@ -416,7 +417,7 @@ export function Vo2MaxSettings() {
   const handleRestingHeartRateChange =
     useCallback(
       (
-        event: React.ChangeEvent<HTMLInputElement>,
+        event: ChangeEvent<HTMLInputElement>,
       ) => {
         const value =
           event.target.value.replace(
@@ -438,7 +439,7 @@ export function Vo2MaxSettings() {
   const handleVo2MaxChange =
     useCallback(
       (
-        event: React.ChangeEvent<HTMLInputElement>,
+        event: ChangeEvent<HTMLInputElement>,
       ) => {
         let value =
           event.target.value.replace(
@@ -809,10 +810,10 @@ export function Vo2MaxSettings() {
                 "
               >
                 {displayedVo2Max !==
-                null
+                  null
                   ? displayedVo2Max.toFixed(
-                      1,
-                    )
+                    1,
+                  )
                   : "—"}
               </span>
 
@@ -1157,10 +1158,9 @@ export function Vo2MaxSettings() {
                 size-4
                 transition-transform
                 duration-200
-                ${
-                  showAdvanced
-                    ? "rotate-180"
-                    : ""
+                ${showAdvanced
+                  ? "rotate-180"
+                  : ""
                 }
               `}
             />
@@ -1287,7 +1287,7 @@ export function Vo2MaxSettings() {
                     pattern="[0-9]*"
                     value={
                       restingHeartRate ===
-                      0
+                        0
                         ? ""
                         : restingHeartRate
                     }
@@ -1333,7 +1333,7 @@ export function Vo2MaxSettings() {
                   (restingHeartRate <
                     30 ||
                     restingHeartRate >
-                      120) && (
+                    120) && (
                     <p
                       className="
                         mt-1.5
@@ -1409,7 +1409,7 @@ export function Vo2MaxSettings() {
                   "
                 >
                   {estimatedVo2Max !==
-                  null
+                    null
                     ? estimatedVo2Max
                     : "—"}
                 </span>
@@ -1468,10 +1468,10 @@ export function Vo2MaxSettings() {
                   }
                   placeholder={
                     estimatedVo2Max !==
-                    null
+                      null
                       ? String(
-                          estimatedVo2Max,
-                        )
+                        estimatedVo2Max,
+                      )
                       : "e.g. 45.2"
                   }
                   className="
@@ -1567,9 +1567,9 @@ export function Vo2MaxSettings() {
                     restingHeartRate,
                   ) ||
                   restingHeartRate <
-                    30 ||
+                  30 ||
                   restingHeartRate >
-                    120
+                  120
                 }
                 className="
                   inline-flex
@@ -1643,10 +1643,7 @@ export function Vo2MaxSettings() {
             text-muted-foreground
           "
         >
-          VO₂ Max shown here is
-          an estimated fitness
-          metric and is not a
-          medical measurement.
+          VO₂ Max shown here is an estimated fitness metric and is not a medical measurement.
         </p>
       </div>
     </section>
